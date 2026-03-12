@@ -82,6 +82,8 @@ src/
       mod.rs
       context.rs             # レンダリングコンテキスト
       status.rs              # メインレンダリングループ
+      image_renderer.rs      # 画像レンダリング（Phase 4）
+      path_renderer.rs       # パスレンダリング（Phase 4）
     edit/
       mod.rs
       creator.rs             # PDF書き出し
