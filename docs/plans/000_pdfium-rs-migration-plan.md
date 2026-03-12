@@ -89,6 +89,7 @@ src/
     edit/
       mod.rs
       creator.rs             # PDF書き出し
+      content_generator.rs   # コンテンツストリーム生成（Phase 6）
   fpdfdoc/
     mod.rs
     bookmark.rs              # ブックマーク/アウトライン
