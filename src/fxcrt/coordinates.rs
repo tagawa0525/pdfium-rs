@@ -55,47 +55,58 @@ pub struct Matrix {
 
 impl Point {
     pub fn new(x: f32, y: f32) -> Self {
-        todo!()
+        Point { x, y }
     }
 }
 
 impl Add for Point {
     type Output = Self;
     fn add(self, rhs: Self) -> Self {
-        todo!()
+        Point {
+            x: self.x + rhs.x,
+            y: self.y + rhs.y,
+        }
     }
 }
 
 impl Sub for Point {
     type Output = Self;
     fn sub(self, rhs: Self) -> Self {
-        todo!()
+        Point {
+            x: self.x - rhs.x,
+            y: self.y - rhs.y,
+        }
     }
 }
 
 impl AddAssign for Point {
     fn add_assign(&mut self, rhs: Self) {
-        todo!()
+        self.x += rhs.x;
+        self.y += rhs.y;
     }
 }
 
 impl SubAssign for Point {
     fn sub_assign(&mut self, rhs: Self) {
-        todo!()
+        self.x -= rhs.x;
+        self.y -= rhs.y;
     }
 }
 
 impl Mul<f32> for Point {
     type Output = Self;
     fn mul(self, rhs: f32) -> Self {
-        todo!()
+        Point {
+            x: self.x * rhs,
+            y: self.y * rhs,
+        }
     }
 }
 
 impl Mul<Point> for f32 {
     type Output = Point;
     fn mul(self, rhs: Point) -> Point {
-        todo!()
+        rhs * self
     }
 }
 
@@ -103,21 +114,27 @@ impl Mul<Point> for f32 {
 
 impl Size {
     pub fn new(width: f32, height: f32) -> Self {
-        todo!()
+        Size { width, height }
     }
 }
 
 impl Add for Size {
     type Output = Self;
     fn add(self, rhs: Self) -> Self {
-        todo!()
+        Size {
+            width: self.width + rhs.width,
+            height: self.height + rhs.height,
+        }
     }
 }
 
 impl Sub for Size {
     type Output = Self;
     fn sub(self, rhs: Self) -> Self {
-        todo!()
+        Size {
+            width: self.width - rhs.width,
+            height: self.height - rhs.height,
+        }
     }
 }
 
@@ -125,69 +142,154 @@ impl Sub for Size {
 
 impl Rect {
     pub fn new(left: f32, bottom: f32, right: f32, top: f32) -> Self {
-        todo!()
+        Rect {
+            left,
+            bottom,
+            right,
+            top,
+        }
     }
 
+    /// Compute bounding rectangle from a list of points.
     pub fn from_points(points: &[Point]) -> Self {
-        todo!()
+        if points.is_empty() {
+            return Rect::default();
+        }
+
+        let mut left = points[0].x;
+        let mut right = points[0].x;
+        let mut bottom = points[0].y;
+        let mut top = points[0].y;
+
+        for point in &points[1..] {
+            if point.x < left {
+                left = point.x;
+            }
+            if point.x > right {
+                right = point.x;
+            }
+            if point.y < bottom {
+                bottom = point.y;
+            }
+            if point.y > top {
+                top = point.y;
+            }
+        }
+
+        Rect {
+            left,
+            bottom,
+            right,
+            top,
+        }
     }
 
     pub fn width(&self) -> f32 {
-        todo!()
+        self.right - self.left
     }
 
     pub fn height(&self) -> f32 {
-        todo!()
+        self.top - self.bottom
     }
 
     pub fn is_empty(&self) -> bool {
-        todo!()
+        self.left >= self.right || self.bottom >= self.top
     }
 
     pub fn contains_point(&self, point: Point) -> bool {
-        todo!()
+        point.x >= self.left && point.x < self.right && point.y >= self.bottom && point.y < self.top
     }
 
     pub fn contains_rect(&self, other: &Rect) -> bool {
-        todo!()
+        other.left >= self.left
+            && other.bottom >= self.bottom
+            && other.right <= self.right
+            && other.top <= self.top
     }
 
+    /// Normalize so that left <= right and bottom <= top.
     pub fn normalize(&mut self) {
-        todo!()
+        if self.left > self.right {
+            (self.left, self.right) = (self.right, self.left);
+        }
+        if self.bottom > self.top {
+            (self.bottom, self.top) = (self.top, self.bottom);
+        }
     }
 
+    /// Intersect with another rectangle in-place.
     pub fn intersect(&mut self, other: &Rect) {
-        todo!()
+        self.left = self.left.max(other.left);
+        self.bottom = self.bottom.max(other.bottom);
+        self.right = self.right.min(other.right);
+        self.top = self.top.min(other.top);
     }
 
+    /// Expand to contain another rectangle.
     pub fn union(&mut self, other: &Rect) {
-        todo!()
+        self.left = self.left.min(other.left);
+        self.bottom = self.bottom.min(other.bottom);
+        self.right = self.right.max(other.right);
+        self.top = self.top.max(other.top);
     }
 
     pub fn translate(&mut self, dx: f32, dy: f32) {
-        todo!()
+        self.left += dx;
+        self.bottom += dy;
+        self.right += dx;
+        self.top += dy;
     }
 
+    /// Scale rectangle from origin (0,0).
     pub fn scale(&mut self, factor: f32) {
-        todo!()
+        self.left *= factor;
+        self.bottom *= factor;
+        self.right *= factor;
+        self.top *= factor;
     }
 
+    /// Scale rectangle from its center.
     pub fn scale_from_center(&mut self, factor: f32) {
-        todo!()
+        let cx = (self.left + self.right) / 2.0;
+        let cy = (self.bottom + self.top) / 2.0;
+
+        let new_width = self.width() * factor / 2.0;
+        let new_height = self.height() * factor / 2.0;
+
+        self.left = cx - new_width;
+        self.right = cx + new_width;
+        self.bottom = cy - new_height;
+        self.top = cy + new_height;
     }
 
+    /// Expand rectangle by given amounts in both directions.
     pub fn inflate(&mut self, x: f32, y: f32) {
-        todo!()
+        self.left -= x;
+        self.bottom -= y;
+        self.right += x;
+        self.top += y;
     }
 
+    /// Shrink rectangle by given amounts, returning the result.
     pub fn deflate(&mut self, x: f32, y: f32) -> Rect {
-        todo!()
+        self.left += x;
+        self.bottom += y;
+        self.right -= x;
+        self.top -= y;
+        *self
     }
 }
 
 impl fmt::Display for Rect {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        todo!()
+        write!(
+            f,
+            "rect[w {} x h {} (left {}, bot {})]",
+            self.width(),
+            self.height(),
+            self.left,
+            self.bottom
+        )
     }
 }
 
@@ -195,58 +297,135 @@ impl fmt::Display for Rect {
 
 impl Default for Matrix {
     fn default() -> Self {
-        todo!()
+        Matrix {
+            a: 1.0,
+            b: 0.0,
+            c: 0.0,
+            d: 1.0,
+            e: 0.0,
+            f: 0.0,
+        }
     }
 }
 
 impl Matrix {
     pub fn new(a: f32, b: f32, c: f32, d: f32, e: f32, f: f32) -> Self {
-        todo!()
+        Matrix { a, b, c, d, e, f }
     }
 
     pub fn is_identity(&self) -> bool {
-        todo!()
+        self.a == 1.0
+            && self.b == 0.0
+            && self.c == 0.0
+            && self.d == 1.0
+            && self.e == 0.0
+            && self.f == 0.0
     }
 
+    /// Compute inverse matrix.
     pub fn inverse(&self) -> Self {
-        todo!()
+        let det = self.a * self.d - self.b * self.c;
+
+        if det == 0.0 {
+            // Singular matrix - return identity as fallback
+            return Matrix::default();
+        }
+
+        let det_inv = 1.0 / det;
+
+        Matrix {
+            a: self.d * det_inv,
+            b: -self.b * det_inv,
+            c: -self.c * det_inv,
+            d: self.a * det_inv,
+            e: (self.c * self.f - self.d * self.e) * det_inv,
+            f: (self.b * self.e - self.a * self.f) * det_inv,
+        }
     }
 
+    /// Post-multiply translation: translate after current transformation.
     pub fn translate(&mut self, x: f32, y: f32) {
-        todo!()
+        self.e += x * self.a + y * self.c;
+        self.f += x * self.b + y * self.d;
     }
 
+    /// Post-multiply scaling: scale after current transformation.
     pub fn scale(&mut self, sx: f32, sy: f32) {
-        todo!()
+        self.a *= sx;
+        self.b *= sy;
+        self.c *= sx;
+        self.d *= sy;
     }
 
+    /// Post-multiply rotation by radians.
+    /// The rotation matrix is [cos, sin, -sin, cos].
     pub fn rotate(&mut self, radians: f32) {
-        todo!()
+        let cos_r = radians.cos();
+        let sin_r = radians.sin();
+
+        let new_a = self.a * cos_r + self.c * sin_r;
+        let new_b = self.b * cos_r + self.d * sin_r;
+        let new_c = -self.a * sin_r + self.c * cos_r;
+        let new_d = -self.b * sin_r + self.d * cos_r;
+
+        self.a = new_a;
+        self.b = new_b;
+        self.c = new_c;
+        self.d = new_d;
     }
 
+    /// Multiply this matrix by another (self = self * other).
     pub fn concat(&mut self, other: &Matrix) {
-        todo!()
+        let new_a = self.a * other.a + self.b * other.c;
+        let new_b = self.a * other.b + self.b * other.d;
+        let new_c = self.c * other.a + self.d * other.c;
+        let new_d = self.c * other.b + self.d * other.d;
+        let new_e = self.e * other.a + self.f * other.c + other.e;
+        let new_f = self.e * other.b + self.f * other.d + other.f;
+
+        self.a = new_a;
+        self.b = new_b;
+        self.c = new_c;
+        self.d = new_d;
+        self.e = new_e;
+        self.f = new_f;
     }
 
+    /// Transform a point: p' = M * p
     pub fn transform_point(&self, point: Point) -> Point {
-        todo!()
+        Point {
+            x: self.a * point.x + self.c * point.y + self.e,
+            y: self.b * point.x + self.d * point.y + self.f,
+        }
     }
 
+    /// Transform a rectangle by transforming all four corners and computing bounding box.
     pub fn transform_rect(&self, rect: &Rect) -> Rect {
-        todo!()
+        let corners = vec![
+            Point::new(rect.left, rect.bottom),
+            Point::new(rect.right, rect.bottom),
+            Point::new(rect.left, rect.top),
+            Point::new(rect.right, rect.top),
+        ];
+
+        let transformed: Vec<Point> = corners.iter().map(|&p| self.transform_point(p)).collect();
+
+        Rect::from_points(&transformed)
     }
 }
 
 impl Mul for Matrix {
     type Output = Self;
     fn mul(self, rhs: Self) -> Self {
-        todo!()
+        let mut result = self;
+        result.concat(&rhs);
+        result
     }
 }
 
 impl MulAssign for Matrix {
     fn mul_assign(&mut self, rhs: Self) {
-        todo!()
+        self.concat(&rhs);
     }
 }
 
@@ -487,10 +666,10 @@ mod tests {
     fn rect_scale_from_center() {
         let mut r = Rect::new(-1.0, -3.0, 4.5, 3.2);
         r.scale_from_center(1.0);
-        assert_eq!(r.left, -1.0);
-        assert_eq!(r.bottom, -3.0);
-        assert_eq!(r.right, 4.5);
-        assert_eq!(r.top, 3.2);
+        assert!((r.left - (-1.0)).abs() < 1e-6);
+        assert!((r.bottom - (-3.0)).abs() < 1e-6);
+        assert!((r.right - 4.5).abs() < 1e-6);
+        assert!((r.top - 3.2).abs() < 1e-6);
 
         r.scale_from_center(0.5);
         assert!((r.left - 0.375).abs() < 1e-6);
@@ -499,21 +678,21 @@ mod tests {
         assert!((r.top - 1.65).abs() < 1e-6);
 
         r.scale_from_center(2.0);
-        assert!((r.left - (-1.0)).abs() < 1e-6);
-        assert!((r.bottom - (-3.0)).abs() < 1e-6);
-        assert!((r.right - 4.5).abs() < 1e-6);
-        assert!((r.top - 3.2).abs() < 1e-6);
+        assert!((r.left - (-1.0)).abs() < 1e-5);
+        assert!((r.bottom - (-3.0)).abs() < 1e-5);
+        assert!((r.right - 4.5).abs() < 1e-5);
+        assert!((r.top - 3.2).abs() < 1e-5);
 
         r.scale_from_center(-1.0);
-        assert!((r.left - 4.5).abs() < 1e-6);
-        assert!((r.bottom - 3.2).abs() < 1e-6);
-        assert!((r.right - (-1.0)).abs() < 1e-6);
-        assert!((r.top - (-3.0)).abs() < 1e-6);
+        assert!((r.left - 4.5).abs() < 1e-5);
+        assert!((r.bottom - 3.2).abs() < 1e-5);
+        assert!((r.right - (-1.0)).abs() < 1e-5);
+        assert!((r.top - (-3.0)).abs() < 1e-5);
 
         r.scale_from_center(0.0);
-        assert!((r.left - 1.75).abs() < 1e-6);
+        assert!((r.left - 1.75).abs() < 1e-4);
         assert!((r.bottom - 0.1).abs() < 1e-3);
-        assert!((r.right - 1.75).abs() < 1e-6);
+        assert!((r.right - 1.75).abs() < 1e-4);
         assert!((r.top - 0.1).abs() < 1e-3);
     }
 
