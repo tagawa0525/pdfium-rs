@@ -33,6 +33,9 @@ Level 5: fpdfdoc（ブックマーク・注釈・フォーム）, fpdftext（テ
 
 単一crateで内部モジュール分割。ワークスペースは依存関係の密結合と孤立ルール制約のため不採用。
 
+> **現在の状態**: `src/main.rs` のバイナリcrateとして初期化済み。
+> Phase 1着手時に `src/lib.rs` を追加してライブラリcrateに変換し、`main.rs` は動作確認用の薄いラッパーとして残す。
+
 ```text
 src/
   lib.rs                     # 公開API再エクスポート
