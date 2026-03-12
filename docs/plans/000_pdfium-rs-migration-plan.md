@@ -5,6 +5,9 @@
 Google PDFiumをRustに移植する。FFIバインディングではなく、Rustのイディオムに沿った純粋な再実装。
 C++のリファレンスコード（`reference/pdfium/`）を参照しつつ、所有権モデル・型システム・エラーハンドリングをRustネイティブに設計する。
 
+> **リファレンスコードの取得**: `reference/pdfium/` はgitignore対象のため本リポジトリには含まれていない。
+> `git clone https://pdfium.googlesource.com/pdfium reference/pdfium` でリポジトリルートに配置すること。
+
 移植はCore機能（`core/`配下の7モジュール）から段階的に進め、各フェーズで動作するデモが得られるようにする。
 
 ## モジュール依存関係
