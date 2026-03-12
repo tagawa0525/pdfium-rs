@@ -58,6 +58,8 @@ src/
     dib.rs                   # デバイス非依存ビットマップ
     color.rs                 # ARGB, CMYK, ブレンドモード
     path.rs                  # ベクターパス
+    font/
+      mod.rs                 # フォントラスタライズ（Phase 5）
   fpdfapi/
     parser/
       mod.rs
