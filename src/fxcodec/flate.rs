@@ -48,8 +48,17 @@ fn reverse_png_predictor(
     bits_per_component: u8,
     columns: u16,
 ) -> Result<Vec<u8>> {
+    if colors == 0 || bits_per_component == 0 || columns == 0 {
+        return Err(Error::InvalidPdf(
+            "FlateDecode PNG predictor: colors, bits_per_component, and columns must be non-zero"
+                .into(),
+        ));
+    }
+
+    // bytes_per_pixel: for Sub/Average/Paeth left-neighbor distance
     let bytes_per_pixel = (colors as usize * bits_per_component as usize).div_ceil(8);
-    let row_stride = columns as usize * bytes_per_pixel;
+    // row_stride: actual byte width of one row (accounts for bit-packed samples)
+    let row_stride = (columns as usize * colors as usize * bits_per_component as usize).div_ceil(8);
     // Each stored row: 1 filter byte + row_stride data bytes
     let stored_row_len = 1 + row_stride;
 
