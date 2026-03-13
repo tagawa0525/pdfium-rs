@@ -151,7 +151,7 @@ pub enum PdfObject {
 
 ## フェーズ別マイルストーン
 
-### Phase 1: fxcrt基盤 + PDF解析とメタデータ取得
+### Phase 1: fxcrt基盤 + PDF解析とメタデータ取得 — **IMPLEMENTED**
 
 **成果物**: fxcrtモジュールを網羅的に移植した上で、PDFファイルを開きオブジェクトグラフを走査できるライブラリ
 
