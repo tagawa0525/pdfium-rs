@@ -56,7 +56,22 @@ pub fn decrypt_aes256_cbc(key: &[u8], iv: &[u8], ciphertext: &[u8]) -> Result<Ve
 ///
 /// Used in PDF Standard Security Handler revision 6 (Revision6_Hash).
 pub fn encrypt_aes128_cbc(key: &[u8], iv: &[u8], plaintext: &[u8]) -> Result<Vec<u8>> {
-    todo!()
+    let key: &[u8; 16] = key
+        .try_into()
+        .map_err(|_| Error::InvalidPdf("AES-128-CBC encrypt: key must be 16 bytes".into()))?;
+    let iv: &[u8; 16] = iv
+        .try_into()
+        .map_err(|_| Error::InvalidPdf("AES-128-CBC encrypt: IV must be 16 bytes".into()))?;
+    if !plaintext.len().is_multiple_of(16) {
+        return Err(Error::InvalidPdf(
+            "AES-128-CBC encrypt: plaintext length must be a multiple of 16".into(),
+        ));
+    }
+    let mut buf = plaintext.to_vec();
+    Encryptor::<Aes128>::new(key.into(), iv.into())
+        .encrypt_padded_mut::<NoPadding>(&mut buf, plaintext.len())
+        .map_err(|e| Error::InvalidPdf(format!("AES-128-CBC encrypt: {e}")))?;
+    Ok(buf)
 }
 
 #[cfg(test)]
@@ -132,7 +147,6 @@ mod tests {
 
     // AES-128-CBC encrypt: NIST SP 800-38A F.2.1 (inverse of decrypt vector)
     #[test]
-    #[ignore = "not yet implemented"]
     fn aes128_cbc_encrypt_nist_vector() {
         let key = hex_decode("2b7e151628aed2a6abf7158809cf4f3c");
         let iv = hex_decode("000102030405060708090a0b0c0d0e0f");
@@ -145,7 +159,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn aes128_cbc_encrypt_decrypt_roundtrip() {
         let key = [0x42u8; 16];
         let iv = [0x00u8; 16];

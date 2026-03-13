@@ -4,7 +4,7 @@ use sha2::{Digest, Sha384};
 ///
 /// Used in PDF Standard Security Handler revision 6 (Revision6_Hash).
 pub fn digest(data: &[u8]) -> [u8; 48] {
-    todo!()
+    Sha384::digest(data).into()
 }
 
 #[cfg(test)]
@@ -12,7 +12,6 @@ mod tests {
     use super::*;
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn sha384_empty() {
         // SHA-384("") from FIPS 180-4
         let result = digest(b"");
@@ -26,7 +25,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn sha384_abc() {
         // SHA-384("abc") from FIPS 180-4
         let result = digest(b"abc");
