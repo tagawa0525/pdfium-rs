@@ -82,7 +82,7 @@ impl PdfByteString {
     }
 
     pub fn substr(&self, offset: usize, count: usize) -> Self {
-        let end = (offset + count).min(self.data.len());
+        let end = offset.saturating_add(count).min(self.data.len());
         let start = offset.min(self.data.len());
         PdfByteString {
             data: self.data[start..end].to_vec(),
