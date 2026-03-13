@@ -102,14 +102,20 @@ impl DictTable {
     }
 
     fn get(&self, code: u16) -> Vec<u8> {
-        if code < 256 {
-            return vec![code as u8];
+        let mut bytes = Vec::new();
+        let mut current = code;
+        loop {
+            if current < 256 {
+                bytes.push(current as u8);
+                break;
+            }
+            let idx = (current - FIRST_CODE) as usize;
+            let (prefix, byte) = self.entries[idx];
+            bytes.push(byte);
+            current = prefix;
         }
-        let idx = (code - FIRST_CODE) as usize;
-        let (prefix, byte) = self.entries[idx];
-        let mut result = self.get(prefix);
-        result.push(byte);
-        result
+        bytes.reverse();
+        bytes
     }
 
     fn add(&mut self, prefix: u16, byte: u8) {
