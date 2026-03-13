@@ -246,8 +246,8 @@ mod tests {
 
     #[test]
     fn object_real() {
-        let obj = PdfObject::Real(3.14);
-        assert_eq!(obj.as_f64(), Some(3.14));
+        let obj = PdfObject::Real(2.72);
+        assert_eq!(obj.as_f64(), Some(2.72));
         assert_eq!(obj.as_i32(), None);
     }
 

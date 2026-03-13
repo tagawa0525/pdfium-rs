@@ -404,7 +404,7 @@ impl Matrix {
 
     /// Transform a rectangle by transforming all four corners and computing bounding box.
     pub fn transform_rect(&self, rect: &Rect) -> Rect {
-        let corners = vec![
+        let corners = [
             Point::new(rect.left, rect.bottom),
             Point::new(rect.right, rect.bottom),
             Point::new(rect.left, rect.top),
@@ -797,8 +797,10 @@ mod tests {
 
     #[test]
     fn matrix_is_identity_false() {
-        let mut m = Matrix::default();
-        m.a = -1.0;
+        let m = Matrix {
+            a: -1.0,
+            ..Default::default()
+        };
         assert!(!m.is_identity());
     }
 
@@ -827,7 +829,7 @@ mod tests {
         assert_eq!(inv.b, 0.0);
         assert!((inv.c - (-0.22222222)).abs() < 1e-6);
         assert!((inv.d - 0.33333334).abs() < 1e-6);
-        assert!((inv.e - 0.55555556).abs() < 1e-6);
+        assert!((inv.e - 0.555_555_6).abs() < 1e-6);
         assert!((inv.f - (-1.3333334)).abs() < 1e-5);
 
         let p = Point::new(2.0, 3.0);

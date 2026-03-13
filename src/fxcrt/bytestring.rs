@@ -48,7 +48,7 @@ impl PdfByteString {
     /// Odd-length hex strings are padded with a trailing 0 nibble (PDF spec behavior).
     pub fn from_hex(hex: &str) -> Option<Self> {
         let hex = hex.as_bytes();
-        let mut bytes = Vec::with_capacity((hex.len() + 1) / 2);
+        let mut bytes = Vec::with_capacity(hex.len().div_ceil(2));
 
         let mut i = 0;
         while i < hex.len() {
