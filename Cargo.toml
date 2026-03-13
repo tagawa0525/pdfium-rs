@@ -4,4 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+aes = "0.8.4"
+cbc = { version = "0.1.2", features = ["alloc"] }
 flate2 = "1.1.9"
+md-5 = "0.10.6"
+sha2 = "0.10.9"
