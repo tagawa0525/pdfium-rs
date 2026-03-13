@@ -14,19 +14,26 @@ pub enum Error {
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        todo!()
+        match self {
+            Error::Io(e) => write!(f, "I/O error: {e}"),
+            Error::InvalidPdf(msg) => write!(f, "invalid PDF: {msg}"),
+            Error::Unsupported(msg) => write!(f, "unsupported: {msg}"),
+        }
     }
 }
 
 impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        todo!()
+        match self {
+            Error::Io(e) => Some(e),
+            _ => None,
+        }
     }
 }
 
 impl From<io::Error> for Error {
     fn from(e: io::Error) -> Self {
-        todo!()
+        Error::Io(e)
     }
 }
 

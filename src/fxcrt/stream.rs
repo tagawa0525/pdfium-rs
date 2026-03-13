@@ -23,33 +23,56 @@ pub struct MemoryStream {
 
 impl MemoryStream {
     pub fn new(data: Vec<u8>) -> Self {
-        todo!()
+        MemoryStream { data, pos: 0 }
     }
 
     pub fn from_slice(data: &[u8]) -> Self {
-        todo!()
+        MemoryStream {
+            data: data.to_vec(),
+            pos: 0,
+        }
     }
 
     pub fn as_bytes(&self) -> &[u8] {
-        todo!()
+        &self.data
     }
 }
 
 impl Read for MemoryStream {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        todo!()
+        let pos = self.pos as usize;
+        if pos >= self.data.len() {
+            return Ok(0);
+        }
+        let available = &self.data[pos..];
+        let n = buf.len().min(available.len());
+        buf[..n].copy_from_slice(&available[..n]);
+        self.pos += n as u64;
+        Ok(n)
     }
 }
 
 impl Seek for MemoryStream {
     fn seek(&mut self, pos: io::SeekFrom) -> io::Result<u64> {
-        todo!()
+        let new_pos: i64 = match pos {
+            io::SeekFrom::Start(n) => n as i64,
+            io::SeekFrom::End(n) => self.data.len() as i64 + n,
+            io::SeekFrom::Current(n) => self.pos as i64 + n,
+        };
+        if new_pos < 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "seek before start of stream",
+            ));
+        }
+        self.pos = new_pos as u64;
+        Ok(self.pos)
     }
 }
 
 impl PdfRead for MemoryStream {
     fn stream_len(&mut self) -> io::Result<u64> {
-        todo!()
+        Ok(self.data.len() as u64)
     }
 }
 

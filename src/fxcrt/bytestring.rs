@@ -12,116 +12,166 @@ pub struct PdfByteString {
 
 impl PdfByteString {
     pub fn new() -> Self {
-        todo!()
+        PdfByteString { data: Vec::new() }
     }
 
     pub fn from_bytes(bytes: &[u8]) -> Self {
-        todo!()
+        PdfByteString {
+            data: bytes.to_vec(),
+        }
     }
 
     pub fn len(&self) -> usize {
-        todo!()
+        self.data.len()
     }
 
     pub fn is_empty(&self) -> bool {
-        todo!()
+        self.data.is_empty()
     }
 
     pub fn as_bytes(&self) -> &[u8] {
-        todo!()
+        &self.data
     }
 
     /// Try to interpret as UTF-8 string.
     pub fn as_str(&self) -> Option<&str> {
-        todo!()
+        std::str::from_utf8(&self.data).ok()
     }
 
     /// Encode bytes as uppercase hex string.
     pub fn to_hex(&self) -> String {
-        todo!()
+        self.data.iter().map(|b| format!("{b:02X}")).collect()
     }
 
     /// Decode hex string into bytes.
+    /// Odd-length hex strings are padded with a trailing 0 nibble (PDF spec behavior).
     pub fn from_hex(hex: &str) -> Option<Self> {
-        todo!()
+        let hex = hex.as_bytes();
+        let mut bytes = Vec::with_capacity((hex.len() + 1) / 2);
+
+        let mut i = 0;
+        while i < hex.len() {
+            let hi = hex_nibble(hex[i])?;
+            let lo = if i + 1 < hex.len() {
+                hex_nibble(hex[i + 1])?
+            } else {
+                0
+            };
+            bytes.push((hi << 4) | lo);
+            i += 2;
+        }
+
+        Some(PdfByteString { data: bytes })
     }
 
     /// Case-insensitive comparison (ASCII only).
     pub fn eq_ignore_ascii_case(&self, other: &PdfByteString) -> bool {
-        todo!()
+        self.data.eq_ignore_ascii_case(&other.data)
     }
 
     pub fn starts_with(&self, prefix: &[u8]) -> bool {
-        todo!()
+        self.data.starts_with(prefix)
     }
 
     pub fn find(&self, needle: &[u8]) -> Option<usize> {
-        todo!()
+        self.data.windows(needle.len()).position(|w| w == needle)
     }
 
     pub fn substr(&self, offset: usize, count: usize) -> Self {
-        todo!()
+        let end = (offset + count).min(self.data.len());
+        let start = offset.min(self.data.len());
+        PdfByteString {
+            data: self.data[start..end].to_vec(),
+        }
     }
 
     pub fn to_uppercase(&self) -> Self {
-        todo!()
+        PdfByteString {
+            data: self.data.to_ascii_uppercase(),
+        }
     }
 
     pub fn to_lowercase(&self) -> Self {
-        todo!()
+        PdfByteString {
+            data: self.data.to_ascii_lowercase(),
+        }
     }
 
     pub fn trim_whitespace(&self) -> Self {
-        todo!()
+        let start = self.data.iter().position(|b| !b.is_ascii_whitespace());
+        let end = self.data.iter().rposition(|b| !b.is_ascii_whitespace());
+        match (start, end) {
+            (Some(s), Some(e)) => PdfByteString {
+                data: self.data[s..=e].to_vec(),
+            },
+            _ => PdfByteString::new(),
+        }
+    }
+}
+
+fn hex_nibble(c: u8) -> Option<u8> {
+    match c {
+        b'0'..=b'9' => Some(c - b'0'),
+        b'a'..=b'f' => Some(c - b'a' + 10),
+        b'A'..=b'F' => Some(c - b'A' + 10),
+        _ => None,
     }
 }
 
 impl From<&[u8]> for PdfByteString {
     fn from(bytes: &[u8]) -> Self {
-        todo!()
+        PdfByteString::from_bytes(bytes)
     }
 }
 
 impl From<&str> for PdfByteString {
     fn from(s: &str) -> Self {
-        todo!()
+        PdfByteString {
+            data: s.as_bytes().to_vec(),
+        }
     }
 }
 
 impl From<Vec<u8>> for PdfByteString {
     fn from(v: Vec<u8>) -> Self {
-        todo!()
+        PdfByteString { data: v }
     }
 }
 
 impl Deref for PdfByteString {
     type Target = [u8];
     fn deref(&self) -> &[u8] {
-        todo!()
+        &self.data
     }
 }
 
 impl fmt::Debug for PdfByteString {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        todo!()
+        match std::str::from_utf8(&self.data) {
+            Ok(s) => write!(f, "PdfByteString({s:?})"),
+            Err(_) => write!(f, "PdfByteString(hex:{})", self.to_hex()),
+        }
     }
 }
 
 impl fmt::Display for PdfByteString {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        todo!()
+        match std::str::from_utf8(&self.data) {
+            Ok(s) => f.write_str(s),
+            Err(_) => write!(f, "<{}>", self.to_hex()),
+        }
     }
 }
 
 impl PartialEq<&[u8]> for PdfByteString {
     fn eq(&self, other: &&[u8]) -> bool {
-        todo!()
+        self.data.as_slice() == *other
     }
 }
 
 impl PartialEq<&str> for PdfByteString {
     fn eq(&self, other: &&str) -> bool {
-        todo!()
+        self.data.as_slice() == other.as_bytes()
     }
 }
 
