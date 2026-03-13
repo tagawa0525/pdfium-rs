@@ -21,7 +21,7 @@ cargo test bytestring       # 特定テスト
 
 ```text
 Level 0: fxcrt（基盤型: 座標、バイト文字列、ストリーム）
-Level 1: fdrm（暗号）, fxge（グラフィックス）, fxcodec（画像コーデック）
+Level 1: fdrm（暗号）, fxge（グラフィックス）, fxcodec（画像コーデック）, fpdfapi/cmaps
 Level 2: fpdfapi/parser（PDFオブジェクトモデル・構文解析）
 Level 3: fpdfapi/page（ページコンテンツ）, fpdfapi/font（フォント）
 Level 4: fpdfapi/render（レンダリング）, fpdfapi/edit（編集）
@@ -49,7 +49,8 @@ Level 5: fpdfdoc（ブックマーク・注釈・フォーム）, fpdftext（テ
 
 ### エラー処理
 
-`thiserror`構造化enum。core → `Error`/`Result<T>`、他ドメイン → `<Domain>Error`/`<Domain>Result<T>`。`#[from]`で自動伝播。
+Phase 1: `std::error::Error`のみ（外部依存ゼロ方針に準拠）。
+Phase 2以降: `thiserror`構造化enumに移行。core → `Error`/`Result<T>`、他ドメイン → `<Domain>Error`/`<Domain>Result<T>`。`#[from]`で自動伝播。
 
 ## PRワークフロー
 
