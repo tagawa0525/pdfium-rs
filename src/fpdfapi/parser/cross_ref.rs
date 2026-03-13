@@ -169,18 +169,25 @@ pub fn find_startxref<R: Read + Seek>(reader: &mut R) -> Result<u64> {
         .rposition(|w| w == needle)
         .ok_or_else(|| Error::InvalidPdf("'startxref' not found".into()))?;
 
-    // Parse the number after "startxref"
+    // Parse the first integer token after "startxref"
     let after = &buf[pos + needle.len()..];
-    let num_str: String = after
-        .iter()
-        .filter(|b| b.is_ascii_digit())
-        .map(|&b| b as char)
-        .collect();
+    let mut i = 0;
+    // Skip whitespace
+    while i < after.len() && after[i].is_ascii_whitespace() {
+        i += 1;
+    }
+    // Collect contiguous digits only
+    let start = i;
+    while i < after.len() && after[i].is_ascii_digit() {
+        i += 1;
+    }
 
-    if num_str.is_empty() {
+    if i == start {
         return Err(Error::InvalidPdf("no offset after 'startxref'".into()));
     }
 
+    let num_str = std::str::from_utf8(&after[start..i])
+        .map_err(|_| Error::InvalidPdf("invalid startxref offset".into()))?;
     num_str
         .parse()
         .map_err(|_| Error::InvalidPdf("invalid startxref offset".into()))
