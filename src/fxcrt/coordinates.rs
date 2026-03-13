@@ -350,11 +350,14 @@ impl Matrix {
     }
 
     /// Post-multiply scaling: scale after current transformation.
+    /// Equivalent to `self = self.concat(Matrix::scale_matrix(sx, sy))`.
     pub fn scale(&mut self, sx: f32, sy: f32) {
         self.a *= sx;
         self.b *= sy;
         self.c *= sx;
         self.d *= sy;
+        self.e *= sx;
+        self.f *= sy;
     }
 
     /// Post-multiply rotation by radians.
