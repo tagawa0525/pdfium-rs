@@ -1,4 +1,5 @@
 pub mod error;
+pub mod fdrm;
 pub mod fpdfapi;
 pub mod fxcodec;
 pub mod fxcrt;
