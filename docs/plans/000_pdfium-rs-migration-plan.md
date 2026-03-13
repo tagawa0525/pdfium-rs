@@ -61,6 +61,8 @@ src/
     font/
       mod.rs                 # フォントラスタライズ（Phase 5）
   fpdfapi/
+    cmaps/
+      mod.rs                 # CJK CMapデータテーブル（Phase 3）
     parser/
       mod.rs
       object.rs              # PdfObject enum（中核データ構造）
