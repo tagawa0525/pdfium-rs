@@ -157,11 +157,12 @@ mod tests {
 
     #[test]
     fn memory_stream_seek_beyond_end() {
+        use std::io::ErrorKind;
         let mut stream = MemoryStream::new(vec![1, 2, 3]);
         stream.seek(SeekFrom::Start(10)).unwrap();
         let mut buf = [0u8; 1];
-        let result = stream.read_exact(&mut buf);
-        assert!(result.is_err());
+        let err = stream.read_exact(&mut buf).unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::UnexpectedEof);
     }
 
     #[test]
