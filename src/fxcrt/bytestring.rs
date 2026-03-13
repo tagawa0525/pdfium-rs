@@ -1,3 +1,4 @@
+use std::borrow::Borrow;
 use std::fmt;
 use std::ops::Deref;
 
@@ -5,7 +6,7 @@ use std::ops::Deref;
 /// that are not guaranteed to be valid UTF-8.
 ///
 /// Corresponds to C++ `ByteString`.
-#[derive(Clone, PartialEq, Eq, Hash, Default)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct PdfByteString {
     data: Vec<u8>,
 }
@@ -141,6 +142,12 @@ impl From<Vec<u8>> for PdfByteString {
 impl Deref for PdfByteString {
     type Target = [u8];
     fn deref(&self) -> &[u8] {
+        &self.data
+    }
+}
+
+impl Borrow<[u8]> for PdfByteString {
+    fn borrow(&self) -> &[u8] {
         &self.data
     }
 }

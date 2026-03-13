@@ -52,49 +52,88 @@ impl ObjectId {
 
 impl PdfObject {
     pub fn as_bool(&self) -> Option<bool> {
-        todo!()
+        match self {
+            PdfObject::Boolean(v) => Some(*v),
+            _ => None,
+        }
     }
 
     pub fn as_i32(&self) -> Option<i32> {
-        todo!()
+        match self {
+            PdfObject::Integer(v) => Some(*v),
+            _ => None,
+        }
     }
 
     pub fn as_f64(&self) -> Option<f64> {
-        todo!()
+        match self {
+            PdfObject::Real(v) => Some(*v),
+            PdfObject::Integer(v) => Some(*v as f64),
+            _ => None,
+        }
     }
 
     pub fn as_name(&self) -> Option<&PdfByteString> {
-        todo!()
+        match self {
+            PdfObject::Name(v) => Some(v),
+            _ => None,
+        }
     }
 
     pub fn as_str(&self) -> Option<&PdfByteString> {
-        todo!()
+        match self {
+            PdfObject::String(v) => Some(v),
+            _ => None,
+        }
     }
 
     pub fn as_array(&self) -> Option<&[PdfObject]> {
-        todo!()
+        match self {
+            PdfObject::Array(v) => Some(v),
+            _ => None,
+        }
     }
 
     pub fn as_dict(&self) -> Option<&PdfDictionary> {
-        todo!()
+        match self {
+            PdfObject::Dictionary(v) => Some(v),
+            _ => None,
+        }
     }
 
     pub fn as_stream(&self) -> Option<&PdfStream> {
-        todo!()
+        match self {
+            PdfObject::Stream(v) => Some(v),
+            _ => None,
+        }
     }
 
     pub fn as_reference(&self) -> Option<ObjectId> {
-        todo!()
+        match self {
+            PdfObject::Reference(id) => Some(*id),
+            _ => None,
+        }
     }
 
     pub fn is_null(&self) -> bool {
-        todo!()
+        matches!(self, PdfObject::Null)
     }
 }
 
 impl fmt::Debug for PdfObject {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        todo!()
+        match self {
+            PdfObject::Boolean(v) => write!(f, "Bool({v})"),
+            PdfObject::Integer(v) => write!(f, "Int({v})"),
+            PdfObject::Real(v) => write!(f, "Real({v})"),
+            PdfObject::String(v) => write!(f, "String({v:?})"),
+            PdfObject::Name(v) => write!(f, "Name({v:?})"),
+            PdfObject::Array(v) => write!(f, "Array({v:?})"),
+            PdfObject::Dictionary(v) => write!(f, "Dict({v:?})"),
+            PdfObject::Stream(s) => write!(f, "Stream(dict={:?}, {} bytes)", s.dict, s.data.len()),
+            PdfObject::Null => write!(f, "Null"),
+            PdfObject::Reference(id) => write!(f, "Ref({} {})", id.num, id.gen_num),
+        }
     }
 }
 
@@ -102,55 +141,57 @@ impl fmt::Debug for PdfObject {
 
 impl PdfDictionary {
     pub fn new() -> Self {
-        todo!()
+        PdfDictionary {
+            entries: BTreeMap::new(),
+        }
     }
 
     pub fn get(&self, key: &[u8]) -> Option<&PdfObject> {
-        todo!()
+        self.entries.get(key)
     }
 
     pub fn get_name(&self, key: &[u8]) -> Option<&PdfByteString> {
-        todo!()
+        self.get(key).and_then(|o| o.as_name())
     }
 
     pub fn get_string(&self, key: &[u8]) -> Option<&PdfByteString> {
-        todo!()
+        self.get(key).and_then(|o| o.as_str())
     }
 
     pub fn get_i32(&self, key: &[u8]) -> Option<i32> {
-        todo!()
+        self.get(key).and_then(|o| o.as_i32())
     }
 
     pub fn get_dict(&self, key: &[u8]) -> Option<&PdfDictionary> {
-        todo!()
+        self.get(key).and_then(|o| o.as_dict())
     }
 
     pub fn get_array(&self, key: &[u8]) -> Option<&[PdfObject]> {
-        todo!()
+        self.get(key).and_then(|o| o.as_array())
     }
 
     pub fn set(&mut self, key: impl Into<PdfByteString>, value: PdfObject) {
-        todo!()
+        self.entries.insert(key.into(), value);
     }
 
     pub fn remove(&mut self, key: &[u8]) -> Option<PdfObject> {
-        todo!()
+        self.entries.remove(key)
     }
 
     pub fn contains_key(&self, key: &[u8]) -> bool {
-        todo!()
+        self.entries.contains_key(key)
     }
 
     pub fn len(&self) -> usize {
-        todo!()
+        self.entries.len()
     }
 
     pub fn is_empty(&self) -> bool {
-        todo!()
+        self.entries.is_empty()
     }
 
     pub fn keys(&self) -> Vec<&PdfByteString> {
-        todo!()
+        self.entries.keys().collect()
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (&PdfByteString, &PdfObject)> {
@@ -160,7 +201,14 @@ impl PdfDictionary {
 
 impl fmt::Debug for PdfDictionary {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        todo!()
+        write!(f, "Dict{{")?;
+        for (i, (k, v)) in self.entries.iter().enumerate() {
+            if i > 0 {
+                write!(f, ", ")?;
+            }
+            write!(f, "/{k}: {v:?}")?;
+        }
+        write!(f, "}}")
     }
 }
 

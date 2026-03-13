@@ -20,94 +20,502 @@ fn is_numeric_start(ch: u8) -> bool {
     ch.is_ascii_digit() || ch == b'+' || ch == b'-' || ch == b'.'
 }
 
+fn hex_val(ch: u8) -> Option<u8> {
+    match ch {
+        b'0'..=b'9' => Some(ch - b'0'),
+        b'a'..=b'f' => Some(ch - b'a' + 10),
+        b'A'..=b'F' => Some(ch - b'A' + 10),
+        _ => None,
+    }
+}
+
 /// Low-level PDF syntax tokenizer/parser.
 ///
 /// Reads PDF tokens from a seekable byte stream and constructs
 /// `PdfObject` values.
 pub struct SyntaxParser<R: Read + Seek> {
     reader: R,
-    buf: Vec<u8>,
+    #[allow(dead_code)]
     file_len: u64,
 }
 
 impl<R: Read + Seek> SyntaxParser<R> {
-    pub fn new(reader: R) -> Result<Self> {
-        todo!()
+    pub fn new(mut reader: R) -> Result<Self> {
+        let file_len = reader.seek(SeekFrom::End(0))?;
+        reader.seek(SeekFrom::Start(0))?;
+        Ok(SyntaxParser { reader, file_len })
     }
 
     /// Current position in the stream.
     pub fn pos(&mut self) -> Result<u64> {
-        todo!()
+        Ok(self.reader.stream_position()?)
     }
 
     /// Seek to an absolute position.
     pub fn seek(&mut self, pos: u64) -> Result<()> {
-        todo!()
+        self.reader.seek(SeekFrom::Start(pos))?;
+        Ok(())
     }
 
     /// Read the next PDF object at current position.
     pub fn read_object(&mut self) -> Result<PdfObject> {
-        todo!()
+        self.skip_whitespace_and_comments()?;
+
+        let ch = self
+            .read_byte()?
+            .ok_or_else(|| Error::InvalidPdf("unexpected EOF".into()))?;
+
+        match ch {
+            // Literal string
+            b'(' => {
+                let s = self.read_literal_string()?;
+                Ok(PdfObject::String(s))
+            }
+            // Hex string or dictionary
+            b'<' => {
+                let next = self.peek_byte()?;
+                if next == Some(b'<') {
+                    self.read_byte()?; // consume second '<'
+                    self.read_dict()
+                } else {
+                    let s = self.read_hex_string()?;
+                    Ok(PdfObject::String(s))
+                }
+            }
+            // Name
+            b'/' => {
+                let name = self.read_name()?;
+                Ok(PdfObject::Name(name))
+            }
+            // Array
+            b'[' => {
+                let arr = self.read_array()?;
+                Ok(PdfObject::Array(arr))
+            }
+            // Number or reference (N M R)
+            _ if is_numeric_start(ch) => {
+                let obj = self.read_number(ch)?;
+                // Check for reference: integer integer 'R'
+                if let PdfObject::Integer(num) = obj {
+                    let saved_pos = self.pos()?;
+                    if let Ok(obj2) = self.read_object() {
+                        if let PdfObject::Integer(gen_num) = obj2 {
+                            self.skip_whitespace_and_comments()?;
+                            if let Some(b'R') = self.peek_byte()? {
+                                self.read_byte()?;
+                                return Ok(PdfObject::Reference(ObjectId::new(
+                                    num as u32,
+                                    gen_num as u16,
+                                )));
+                            }
+                        }
+                    }
+                    // Not a reference, restore position
+                    self.seek(saved_pos)?;
+                    return Ok(obj);
+                }
+                Ok(obj)
+            }
+            // Keyword: true, false, null, or other
+            _ if !is_delimiter(ch) => {
+                let mut word = vec![ch];
+                loop {
+                    match self.peek_byte()? {
+                        Some(c) if !is_whitespace(c) && !is_delimiter(c) => {
+                            self.read_byte()?;
+                            word.push(c);
+                        }
+                        _ => break,
+                    }
+                }
+                match word.as_slice() {
+                    b"true" => Ok(PdfObject::Boolean(true)),
+                    b"false" => Ok(PdfObject::Boolean(false)),
+                    b"null" => Ok(PdfObject::Null),
+                    _ => Err(Error::InvalidPdf(format!(
+                        "unexpected keyword: {}",
+                        String::from_utf8_lossy(&word)
+                    ))),
+                }
+            }
+            _ => Err(Error::InvalidPdf(format!("unexpected byte: 0x{ch:02X}"))),
+        }
     }
 
     /// Read an indirect object definition: `N M obj ... endobj`
     pub fn read_indirect_object(&mut self) -> Result<(ObjectId, PdfObject)> {
-        todo!()
+        self.skip_whitespace_and_comments()?;
+
+        // Read object number
+        let num_obj = self.read_object()?;
+        let num = num_obj
+            .as_i32()
+            .ok_or_else(|| Error::InvalidPdf("expected object number".into()))?
+            as u32;
+
+        // Read generation number
+        let gen_obj = self.read_object()?;
+        let gen_num = gen_obj
+            .as_i32()
+            .ok_or_else(|| Error::InvalidPdf("expected generation number".into()))?
+            as u16;
+
+        // Read "obj" keyword
+        self.skip_whitespace_and_comments()?;
+        let word = self.read_word()?;
+        if word != b"obj" {
+            return Err(Error::InvalidPdf(format!(
+                "expected 'obj', got '{}'",
+                String::from_utf8_lossy(&word)
+            )));
+        }
+
+        // Read the object body
+        let obj = self.read_object()?;
+
+        // Read "endobj" keyword
+        self.skip_whitespace_and_comments()?;
+        let end_word = self.read_word()?;
+        if end_word != b"endobj" {
+            return Err(Error::InvalidPdf(format!(
+                "expected 'endobj', got '{}'",
+                String::from_utf8_lossy(&end_word)
+            )));
+        }
+
+        Ok((ObjectId::new(num, gen_num), obj))
     }
 
     /// Read the next non-whitespace token as a keyword/word.
     fn read_word(&mut self) -> Result<Vec<u8>> {
-        todo!()
+        self.skip_whitespace_and_comments()?;
+        let mut word = Vec::new();
+        loop {
+            match self.peek_byte()? {
+                Some(c) if !is_whitespace(c) && !is_delimiter(c) => {
+                    self.read_byte()?;
+                    word.push(c);
+                }
+                _ => break,
+            }
+        }
+        if word.is_empty() {
+            return Err(Error::InvalidPdf("expected word".into()));
+        }
+        Ok(word)
     }
 
     /// Skip whitespace and comments.
     fn skip_whitespace_and_comments(&mut self) -> Result<()> {
-        todo!()
+        loop {
+            match self.peek_byte()? {
+                Some(ch) if is_whitespace(ch) => {
+                    self.read_byte()?;
+                }
+                Some(b'%') => {
+                    // Skip to end of line
+                    loop {
+                        match self.read_byte()? {
+                            Some(b'\n') | Some(b'\r') | None => break,
+                            _ => {}
+                        }
+                    }
+                }
+                _ => return Ok(()),
+            }
+        }
     }
 
     /// Read a single byte, returning None at EOF.
     fn read_byte(&mut self) -> Result<Option<u8>> {
-        todo!()
+        let mut buf = [0u8; 1];
+        match self.reader.read(&mut buf)? {
+            0 => Ok(None),
+            _ => Ok(Some(buf[0])),
+        }
     }
 
     /// Peek the next byte without consuming.
     fn peek_byte(&mut self) -> Result<Option<u8>> {
-        todo!()
+        let byte = self.read_byte()?;
+        if byte.is_some() {
+            self.unread_byte()?;
+        }
+        Ok(byte)
     }
 
     /// Put back (unread) one byte.
     fn unread_byte(&mut self) -> Result<()> {
-        todo!()
+        self.reader.seek(SeekFrom::Current(-1))?;
+        Ok(())
     }
 
     /// Parse a number (integer or real).
     fn read_number(&mut self, first: u8) -> Result<PdfObject> {
-        todo!()
+        let mut buf = vec![first];
+        let mut has_dot = first == b'.';
+
+        loop {
+            match self.peek_byte()? {
+                Some(c) if c.is_ascii_digit() => {
+                    self.read_byte()?;
+                    buf.push(c);
+                }
+                Some(b'.') if !has_dot => {
+                    has_dot = true;
+                    self.read_byte()?;
+                    buf.push(b'.');
+                }
+                _ => break,
+            }
+        }
+
+        let s = String::from_utf8_lossy(&buf);
+        if has_dot {
+            let val: f64 = s
+                .parse()
+                .map_err(|_| Error::InvalidPdf(format!("invalid number: {s}")))?;
+            Ok(PdfObject::Real(val))
+        } else {
+            let val: i32 = s
+                .parse()
+                .map_err(|_| Error::InvalidPdf(format!("invalid integer: {s}")))?;
+            Ok(PdfObject::Integer(val))
+        }
     }
 
-    /// Parse a literal string `(...)`.
+    /// Parse a literal string `(...)`. Opening `(` already consumed.
     fn read_literal_string(&mut self) -> Result<PdfByteString> {
-        todo!()
+        let mut result = Vec::new();
+        let mut depth = 1u32;
+
+        loop {
+            let ch = self
+                .read_byte()?
+                .ok_or_else(|| Error::InvalidPdf("unterminated string".into()))?;
+
+            match ch {
+                b'(' => {
+                    depth += 1;
+                    result.push(b'(');
+                }
+                b')' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        break;
+                    }
+                    result.push(b')');
+                }
+                b'\\' => {
+                    let esc = self
+                        .read_byte()?
+                        .ok_or_else(|| Error::InvalidPdf("unterminated escape".into()))?;
+                    match esc {
+                        b'n' => result.push(b'\n'),
+                        b'r' => result.push(b'\r'),
+                        b't' => result.push(b'\t'),
+                        b'b' => result.push(0x08),
+                        b'f' => result.push(0x0C),
+                        b'(' => result.push(b'('),
+                        b')' => result.push(b')'),
+                        b'\\' => result.push(b'\\'),
+                        b'\r' => {
+                            // Line continuation: \CR or \CR\LF
+                            if self.peek_byte()? == Some(b'\n') {
+                                self.read_byte()?;
+                            }
+                        }
+                        b'\n' => {
+                            // Line continuation
+                        }
+                        b'0'..=b'7' => {
+                            // Octal escape (up to 3 digits)
+                            let mut val = esc - b'0';
+                            for _ in 0..2 {
+                                if let Some(c) = self.peek_byte()? {
+                                    if (b'0'..=b'7').contains(&c) {
+                                        self.read_byte()?;
+                                        val = val * 8 + (c - b'0');
+                                    } else {
+                                        break;
+                                    }
+                                }
+                            }
+                            result.push(val);
+                        }
+                        _ => {
+                            // Unknown escape: ignore backslash
+                            result.push(esc);
+                        }
+                    }
+                }
+                _ => result.push(ch),
+            }
+        }
+
+        Ok(PdfByteString::from(result))
     }
 
-    /// Parse a hex string `<...>`.
+    /// Parse a hex string `<...>`. Opening `<` already consumed.
     fn read_hex_string(&mut self) -> Result<PdfByteString> {
-        todo!()
+        let mut hex_chars = Vec::new();
+
+        loop {
+            let ch = self
+                .read_byte()?
+                .ok_or_else(|| Error::InvalidPdf("unterminated hex string".into()))?;
+
+            if ch == b'>' {
+                break;
+            }
+            if is_whitespace(ch) {
+                continue;
+            }
+            if let Some(v) = hex_val(ch) {
+                hex_chars.push(v);
+            } else {
+                return Err(Error::InvalidPdf(format!(
+                    "invalid hex character: 0x{ch:02X}"
+                )));
+            }
+        }
+
+        let mut result = Vec::with_capacity((hex_chars.len() + 1) / 2);
+        let mut i = 0;
+        while i < hex_chars.len() {
+            let hi = hex_chars[i];
+            let lo = if i + 1 < hex_chars.len() {
+                hex_chars[i + 1]
+            } else {
+                0
+            };
+            result.push((hi << 4) | lo);
+            i += 2;
+        }
+
+        Ok(PdfByteString::from(result))
     }
 
-    /// Parse a name object `/Name`.
+    /// Parse a name object `/Name`. Leading `/` already consumed.
     fn read_name(&mut self) -> Result<PdfByteString> {
-        todo!()
+        let mut name = Vec::new();
+
+        loop {
+            match self.peek_byte()? {
+                Some(ch) if is_whitespace(ch) || is_delimiter(ch) => break,
+                None => break,
+                Some(b'#') => {
+                    // Hex-encoded character in name
+                    self.read_byte()?; // consume '#'
+                    let h1 = self
+                        .read_byte()?
+                        .and_then(hex_val)
+                        .ok_or_else(|| Error::InvalidPdf("invalid hex in name".into()))?;
+                    let h2 = self
+                        .read_byte()?
+                        .and_then(hex_val)
+                        .ok_or_else(|| Error::InvalidPdf("invalid hex in name".into()))?;
+                    name.push((h1 << 4) | h2);
+                }
+                Some(ch) => {
+                    self.read_byte()?;
+                    name.push(ch);
+                }
+            }
+        }
+
+        Ok(PdfByteString::from(name))
     }
 
-    /// Parse an array `[...]`.
+    /// Parse an array `[...]`. Opening `[` already consumed.
     fn read_array(&mut self) -> Result<Vec<PdfObject>> {
-        todo!()
+        let mut items = Vec::new();
+
+        loop {
+            self.skip_whitespace_and_comments()?;
+            match self.peek_byte()? {
+                Some(b']') => {
+                    self.read_byte()?;
+                    return Ok(items);
+                }
+                None => return Err(Error::InvalidPdf("unterminated array".into())),
+                _ => {
+                    let obj = self.read_object()?;
+                    items.push(obj);
+                }
+            }
+        }
     }
 
-    /// Parse a dictionary `<< ... >>` and optionally a following stream.
+    /// Parse a dictionary `<< ... >>`. Opening `<<` already consumed.
+    /// If followed by `stream`, reads stream data too.
     fn read_dict(&mut self) -> Result<PdfObject> {
-        todo!()
+        let mut dict = PdfDictionary::new();
+
+        loop {
+            self.skip_whitespace_and_comments()?;
+            match self.peek_byte()? {
+                Some(b'>') => {
+                    self.read_byte()?;
+                    // Consume the second '>'
+                    let next = self.read_byte()?;
+                    if next != Some(b'>') {
+                        return Err(Error::InvalidPdf("expected '>>'".into()));
+                    }
+                    break;
+                }
+                None => return Err(Error::InvalidPdf("unterminated dictionary".into())),
+                _ => {
+                    // Read key (must be a name)
+                    let key_obj = self.read_object()?;
+                    let key = match key_obj {
+                        PdfObject::Name(n) => n,
+                        _ => return Err(Error::InvalidPdf("dictionary key must be a name".into())),
+                    };
+                    // Read value
+                    let value = self.read_object()?;
+                    dict.set(key, value);
+                }
+            }
+        }
+
+        // Check for stream
+        let saved_pos = self.pos()?;
+        self.skip_whitespace_and_comments()?;
+        let mut word_buf = Vec::new();
+        for _ in 0..6 {
+            match self.peek_byte()? {
+                Some(c) if !is_whitespace(c) && !is_delimiter(c) => {
+                    self.read_byte()?;
+                    word_buf.push(c);
+                }
+                _ => break,
+            }
+        }
+
+        if word_buf == b"stream" {
+            // Skip the line ending after "stream" keyword
+            match self.read_byte()? {
+                Some(b'\r') => {
+                    if self.peek_byte()? == Some(b'\n') {
+                        self.read_byte()?;
+                    }
+                }
+                Some(b'\n') => {}
+                _ => {}
+            }
+
+            // Read stream data based on /Length
+            let length = dict.get_i32(b"Length").unwrap_or(0) as usize;
+            let mut data = vec![0u8; length];
+            self.reader.read_exact(&mut data)?;
+
+            return Ok(PdfObject::Stream(PdfStream { dict, data }));
+        }
+
+        // Not a stream, restore position
+        self.seek(saved_pos)?;
+        Ok(PdfObject::Dictionary(dict))
     }
 }
 

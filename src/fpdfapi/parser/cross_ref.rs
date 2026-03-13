@@ -1,8 +1,8 @@
 use std::collections::HashMap;
-use std::io::{Read, Seek};
+use std::io::{Read, Seek, SeekFrom};
 
-use crate::error::Result;
-use crate::fpdfapi::parser::object::PdfDictionary;
+use crate::error::{Error, Result};
+use crate::fpdfapi::parser::object::{PdfDictionary, PdfObject};
 
 /// Entry in the cross-reference table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -23,15 +23,167 @@ pub struct CrossRefTable {
 
 impl CrossRefTable {
     /// Parse cross-reference table(s) starting from the given xref offset.
-    /// Follows `/Prev` links for incremental updates.
+    /// Reads the entire xref+trailer section into memory to avoid borrow issues.
     pub fn parse<R: Read + Seek>(reader: &mut R, xref_offset: u64) -> Result<Self> {
-        todo!()
+        reader.seek(SeekFrom::Start(xref_offset))?;
+
+        // Read remaining data from xref offset
+        let mut data = Vec::new();
+        reader.read_to_end(&mut data)?;
+
+        // Parse xref table from the in-memory buffer
+        Self::parse_from_bytes(&data)
     }
+
+    fn parse_from_bytes(data: &[u8]) -> Result<Self> {
+        let mut pos = 0;
+
+        // Expect "xref"
+        if !data[pos..].starts_with(b"xref") {
+            return Err(Error::InvalidPdf("expected 'xref' keyword".into()));
+        }
+        pos += 4;
+
+        // Skip whitespace
+        while pos < data.len() && data[pos].is_ascii_whitespace() {
+            pos += 1;
+        }
+
+        let mut entries = HashMap::new();
+
+        // Parse sections until "trailer"
+        loop {
+            if data[pos..].starts_with(b"trailer") {
+                break;
+            }
+
+            // Read "first_obj count\n"
+            let (first_obj, new_pos) = read_int(&data[pos..])?;
+            pos += new_pos;
+            skip_ws(data, &mut pos);
+            let (count, new_pos) = read_int(&data[pos..])?;
+            pos += new_pos;
+            skip_ws(data, &mut pos);
+
+            // Parse each 20-byte entry
+            for i in 0..count as u32 {
+                let obj_num = first_obj as u32 + i;
+
+                let (offset, new_pos) = read_int(&data[pos..])?;
+                pos += new_pos;
+                skip_ws(data, &mut pos);
+                let (gen_num, new_pos) = read_int(&data[pos..])?;
+                pos += new_pos;
+                skip_ws(data, &mut pos);
+
+                // Read type: 'f' or 'n'
+                let entry_type = data.get(pos).copied().unwrap_or(b'n');
+                pos += 1;
+                skip_ws(data, &mut pos);
+
+                let entry = if entry_type == b'f' {
+                    XRefEntry::Free {
+                        next_free: offset as u32,
+                        gen_num: gen_num as u16,
+                    }
+                } else {
+                    XRefEntry::Used {
+                        offset: offset as u64,
+                        gen_num: gen_num as u16,
+                    }
+                };
+
+                entries.entry(obj_num).or_insert(entry);
+            }
+        }
+
+        // Skip "trailer" keyword
+        pos += 7; // "trailer"
+        skip_ws(data, &mut pos);
+
+        // Parse trailer dictionary using SyntaxParser
+        use crate::fpdfapi::parser::syntax::SyntaxParser;
+        use std::io::Cursor;
+
+        let trailer_data = &data[pos..];
+        let mut parser = SyntaxParser::new(Cursor::new(trailer_data.to_vec()))?;
+        let trailer_obj = parser.read_object()?;
+        let trailer = match trailer_obj {
+            PdfObject::Dictionary(d) => d,
+            _ => return Err(Error::InvalidPdf("trailer must be a dictionary".into())),
+        };
+
+        Ok(CrossRefTable { entries, trailer })
+    }
+}
+
+fn skip_ws(data: &[u8], pos: &mut usize) {
+    while *pos < data.len() && data[*pos].is_ascii_whitespace() {
+        *pos += 1;
+    }
+}
+
+fn read_int(data: &[u8]) -> Result<(i64, usize)> {
+    let mut i = 0;
+    let mut negative = false;
+
+    if i < data.len() && data[i] == b'-' {
+        negative = true;
+        i += 1;
+    } else if i < data.len() && data[i] == b'+' {
+        i += 1;
+    }
+
+    let start = i;
+    while i < data.len() && data[i].is_ascii_digit() {
+        i += 1;
+    }
+
+    if i == start {
+        return Err(Error::InvalidPdf("expected integer".into()));
+    }
+
+    let s = std::str::from_utf8(&data[start..i])
+        .map_err(|_| Error::InvalidPdf("invalid integer".into()))?;
+    let val: i64 = s
+        .parse()
+        .map_err(|_| Error::InvalidPdf("invalid integer".into()))?;
+
+    Ok((if negative { -val } else { val }, i))
 }
 
 /// Find the `startxref` offset from the end of a PDF file.
 pub fn find_startxref<R: Read + Seek>(reader: &mut R) -> Result<u64> {
-    todo!()
+    // Read the last 1024 bytes (or entire file if smaller)
+    let file_len = reader.seek(SeekFrom::End(0))?;
+    let search_start = file_len.saturating_sub(1024);
+    reader.seek(SeekFrom::Start(search_start))?;
+
+    let mut buf = Vec::new();
+    reader.read_to_end(&mut buf)?;
+
+    // Search backwards for "startxref"
+    let needle = b"startxref";
+    let pos = buf
+        .windows(needle.len())
+        .rposition(|w| w == needle)
+        .ok_or_else(|| Error::InvalidPdf("'startxref' not found".into()))?;
+
+    // Parse the number after "startxref"
+    let after = &buf[pos + needle.len()..];
+    let num_str: String = after
+        .iter()
+        .filter(|b| b.is_ascii_digit())
+        .map(|&b| b as char)
+        .collect();
+
+    if num_str.is_empty() {
+        return Err(Error::InvalidPdf("no offset after 'startxref'".into()));
+    }
+
+    num_str
+        .parse()
+        .map_err(|_| Error::InvalidPdf("invalid startxref offset".into()))
 }
 
 #[cfg(test)]

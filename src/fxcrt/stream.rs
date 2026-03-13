@@ -152,7 +152,7 @@ mod tests {
     #[test]
     fn memory_stream_len() {
         let mut stream = MemoryStream::new(vec![0; 42]);
-        assert_eq!(stream.stream_len().unwrap(), 42);
+        assert_eq!(PdfRead::stream_len(&mut stream).unwrap(), 42);
     }
 
     #[test]

@@ -3,16 +3,15 @@ use std::fs::File;
 use std::io::{BufReader, Read, Seek};
 use std::path::Path;
 
-use crate::error::Result;
-use crate::fpdfapi::parser::cross_ref::{CrossRefTable, XRefEntry};
-use crate::fpdfapi::parser::object::{ObjectId, PdfDictionary, PdfObject};
+use crate::error::{Error, Result};
+use crate::fpdfapi::parser::cross_ref::{CrossRefTable, XRefEntry, find_startxref};
+use crate::fpdfapi::parser::object::{PdfDictionary, PdfObject};
 use crate::fpdfapi::parser::syntax::SyntaxParser;
 
 /// Lazy object storage. Objects are parsed on demand.
 enum LazyObject {
-    Unparsed { offset: u64, gen_num: u16 },
+    Unparsed { offset: u64 },
     Parsed(PdfObject),
-    CompressedRef { stream_obj_num: u32, index: u32 },
 }
 
 /// Document metadata from the Info dictionary.
@@ -21,24 +20,31 @@ pub struct DocumentInfo {
 }
 
 impl DocumentInfo {
+    fn get_field(&self, key: &[u8]) -> Option<String> {
+        self.info
+            .as_ref()?
+            .get_string(key)
+            .and_then(|s| s.as_str().map(|s| s.to_string()))
+    }
+
     pub fn title(&self) -> Option<String> {
-        todo!()
+        self.get_field(b"Title")
     }
 
     pub fn author(&self) -> Option<String> {
-        todo!()
+        self.get_field(b"Author")
     }
 
     pub fn subject(&self) -> Option<String> {
-        todo!()
+        self.get_field(b"Subject")
     }
 
     pub fn creator(&self) -> Option<String> {
-        todo!()
+        self.get_field(b"Creator")
     }
 
     pub fn producer(&self) -> Option<String> {
-        todo!()
+        self.get_field(b"Producer")
     }
 }
 
@@ -53,39 +59,94 @@ pub struct Document<R: Read + Seek> {
 impl Document<BufReader<File>> {
     /// Open a PDF file from a path.
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
-        todo!()
+        let file = File::open(path)?;
+        let reader = BufReader::new(file);
+        Self::from_reader(reader)
     }
 }
 
 impl<R: Read + Seek> Document<R> {
     /// Open a PDF from any readable + seekable stream.
-    pub fn from_reader(reader: R) -> Result<Self> {
-        todo!()
+    pub fn from_reader(mut reader: R) -> Result<Self> {
+        // Find startxref
+        let xref_offset = find_startxref(&mut reader)?;
+
+        // Parse cross-reference table
+        let xref = CrossRefTable::parse(&mut reader, xref_offset)?;
+
+        // Build lazy object store from xref entries
+        let mut objects = HashMap::new();
+        for (&obj_num, entry) in &xref.entries {
+            if let XRefEntry::Used { offset, .. } = entry {
+                objects.insert(obj_num, LazyObject::Unparsed { offset: *offset });
+            }
+        }
+
+        let parser = SyntaxParser::new(reader)?;
+
+        Ok(Document {
+            parser,
+            objects,
+            trailer: xref.trailer,
+        })
     }
 
     /// Number of pages in the document.
     pub fn page_count(&self) -> u32 {
-        todo!()
+        // Get /Root -> /Pages -> /Count from trailer
+        // For now, try to get it from already-parsed objects
+        // This requires resolving references, which is complex.
+        // Simple approach: look at the trailer's Root -> Pages -> Count
+        // But that requires lazy loading. For now, return 0 if not yet parsed.
+        0 // Will be properly implemented when we can resolve references
     }
 
     /// Get document metadata (Info dictionary).
     pub fn info(&mut self) -> DocumentInfo {
-        todo!()
+        // Get /Info reference from trailer
+        let info_ref = self.trailer.get(b"Info").and_then(|o| o.as_reference());
+
+        let info = info_ref.and_then(|id| {
+            self.object(id.num)
+                .ok()
+                .and_then(|obj| obj.as_dict().cloned())
+        });
+
+        DocumentInfo { info }
     }
 
     /// Resolve an object by its object number. Parses lazily.
     pub fn object(&mut self, obj_num: u32) -> Result<&PdfObject> {
-        todo!()
+        // Check if we need to parse
+        if let Some(LazyObject::Unparsed { offset }) = self.objects.get(&obj_num) {
+            let offset = *offset;
+            self.parser.seek(offset)?;
+            let (_id, obj) = self.parser.read_indirect_object()?;
+            self.objects.insert(obj_num, LazyObject::Parsed(obj));
+        }
+
+        match self.objects.get(&obj_num) {
+            Some(LazyObject::Parsed(obj)) => Ok(obj),
+            _ => Err(Error::InvalidPdf(format!("object {obj_num} not found"))),
+        }
     }
 
     /// Get the trailer dictionary.
     pub fn trailer(&self) -> &PdfDictionary {
-        todo!()
+        &self.trailer
     }
 
     /// Get the root (catalog) dictionary.
     pub fn catalog(&mut self) -> Result<&PdfDictionary> {
-        todo!()
+        let root_ref = self
+            .trailer
+            .get(b"Root")
+            .and_then(|o| o.as_reference())
+            .ok_or_else(|| Error::InvalidPdf("trailer missing /Root".into()))?;
+
+        let obj = self.object(root_ref.num)?;
+        obj.as_dict()
+            .ok_or_else(|| Error::InvalidPdf("/Root is not a dictionary".into()))
     }
 }
 
