@@ -203,10 +203,11 @@ mod tests {
 
     #[test]
     fn decode_with_png_predictor_sub() {
-        // 3-column, 1-byte-per-component, 3-color (RGB) image row
-        // Row filter type 1 (Sub): each byte is XOR'd with the byte to its left
+        // 2-column, 8-bit RGB image (2 pixels = 6 bytes).
+        // Filter type 1 (Sub): each byte is the difference from the byte
+        // bytes_per_pixel to its left (mod 256).
         let original: Vec<u8> = vec![10, 20, 30, 40, 50, 60]; // 2 RGB pixels
-        let predicted = apply_png_predictor_sub(&original, 3, 1, 3);
+        let predicted = apply_png_predictor_sub(&original, 3, 2);
         let compressed = zlib_compress(&predicted);
         let result = decode(
             &compressed,
@@ -222,9 +223,9 @@ mod tests {
 
     #[test]
     fn decode_with_png_predictor_up() {
-        // 2-row, 3-column grayscale image
+        // 2-row, 3-column grayscale image (8-bit).
         let original: Vec<u8> = vec![10, 20, 30, 40, 50, 60]; // row1 + row2
-        let predicted = apply_png_predictor_up(&original, 1, 1, 3);
+        let predicted = apply_png_predictor_up(&original, 3);
         let compressed = zlib_compress(&predicted);
         let result = decode(
             &compressed,
@@ -238,41 +239,120 @@ mod tests {
         assert_eq!(result, original);
     }
 
-    /// Helper: apply PNG Sub predictor (filter type 1) to image data.
-    /// Prepends filter-type byte (1) to each row.
-    fn apply_png_predictor_sub(
-        data: &[u8],
-        colors: usize,
-        _bits: usize,
-        columns: usize,
-    ) -> Vec<u8> {
-        let row_len = columns * colors;
+    #[test]
+    fn decode_with_png_predictor_average() {
+        // 2-column, 8-bit grayscale image.
+        // Filter type 3 (Average): each byte is the difference from
+        // floor((left + up) / 2) (mod 256).
+        let original: Vec<u8> = vec![100, 200, 50, 150]; // 2 rows x 2 pixels
+        let predicted = apply_png_predictor_average(&original, 1, 2);
+        let compressed = zlib_compress(&predicted);
+        let result = decode(
+            &compressed,
+            Some(Predictor::Png {
+                colors: 1,
+                bits_per_component: 8,
+                columns: 2,
+            }),
+        )
+        .unwrap();
+        assert_eq!(result, original);
+    }
+
+    #[test]
+    fn decode_with_png_predictor_paeth() {
+        // 2-column, 8-bit grayscale image.
+        // Filter type 4 (Paeth): each byte is the difference from the Paeth
+        // predictor of left, up, and up-left (mod 256).
+        let original: Vec<u8> = vec![100, 200, 50, 150]; // 2 rows x 2 pixels
+        let predicted = apply_png_predictor_paeth(&original, 1, 2);
+        let compressed = zlib_compress(&predicted);
+        let result = decode(
+            &compressed,
+            Some(Predictor::Png {
+                colors: 1,
+                bits_per_component: 8,
+                columns: 2,
+            }),
+        )
+        .unwrap();
+        assert_eq!(result, original);
+    }
+
+    /// Helper: apply PNG Sub predictor (filter type 1).
+    /// `bytes_per_pixel` = colors * bpc / 8 (rounded up for 8-bit: just colors).
+    fn apply_png_predictor_sub(data: &[u8], bytes_per_pixel: usize, columns: usize) -> Vec<u8> {
+        let row_len = columns * bytes_per_pixel;
         let mut out = Vec::new();
         for row in data.chunks(row_len) {
-            out.push(1); // Sub filter type
+            out.push(1);
             for (i, &b) in row.iter().enumerate() {
-                let prev = if i < colors { 0 } else { row[i - colors] };
-                out.push(b.wrapping_sub(prev));
+                let left = if i < bytes_per_pixel {
+                    0
+                } else {
+                    row[i - bytes_per_pixel]
+                };
+                out.push(b.wrapping_sub(left));
             }
         }
         out
     }
 
-    /// Helper: apply PNG Up predictor (filter type 2) to image data.
-    /// Prepends filter-type byte (2) to each row.
-    fn apply_png_predictor_up(
-        data: &[u8],
-        _colors: usize,
-        _bits: usize,
-        columns: usize,
-    ) -> Vec<u8> {
-        let row_len = columns;
+    /// Helper: apply PNG Up predictor (filter type 2).
+    fn apply_png_predictor_up(data: &[u8], columns: usize) -> Vec<u8> {
+        let mut out = Vec::new();
+        let mut prev_row = vec![0u8; columns];
+        for row in data.chunks(columns) {
+            out.push(2);
+            for (i, &b) in row.iter().enumerate() {
+                out.push(b.wrapping_sub(prev_row[i]));
+            }
+            prev_row = row.to_vec();
+        }
+        out
+    }
+
+    /// Helper: apply PNG Average predictor (filter type 3).
+    fn apply_png_predictor_average(data: &[u8], bytes_per_pixel: usize, columns: usize) -> Vec<u8> {
+        let row_len = columns * bytes_per_pixel;
         let mut out = Vec::new();
         let mut prev_row = vec![0u8; row_len];
         for row in data.chunks(row_len) {
-            out.push(2); // Up filter type
+            out.push(3);
             for (i, &b) in row.iter().enumerate() {
-                out.push(b.wrapping_sub(prev_row[i]));
+                let left = if i < bytes_per_pixel {
+                    0u16
+                } else {
+                    row[i - bytes_per_pixel] as u16
+                };
+                let up = prev_row[i] as u16;
+                out.push(b.wrapping_sub(((left + up) / 2) as u8));
+            }
+            prev_row = row.to_vec();
+        }
+        out
+    }
+
+    /// Helper: apply PNG Paeth predictor (filter type 4).
+    fn apply_png_predictor_paeth(data: &[u8], bytes_per_pixel: usize, columns: usize) -> Vec<u8> {
+        let row_len = columns * bytes_per_pixel;
+        let mut out = Vec::new();
+        let mut prev_row = vec![0u8; row_len];
+        for row in data.chunks(row_len) {
+            out.push(4);
+            for (i, &b) in row.iter().enumerate() {
+                let left = if i < bytes_per_pixel {
+                    0
+                } else {
+                    row[i - bytes_per_pixel]
+                };
+                let up = prev_row[i];
+                let up_left = if i < bytes_per_pixel {
+                    0
+                } else {
+                    prev_row[i - bytes_per_pixel]
+                };
+                out.push(b.wrapping_sub(paeth_predictor(left, up, up_left)));
             }
             prev_row = row.to_vec();
         }
