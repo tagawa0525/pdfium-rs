@@ -1,7 +1,7 @@
 use crate::error::{Error, Result};
 use aes::{Aes128, Aes256};
-use cbc::Decryptor;
-use cbc::cipher::{BlockDecryptMut, KeyIvInit, block_padding::NoPadding};
+use cbc::cipher::{BlockDecryptMut, BlockEncryptMut, KeyIvInit, block_padding::NoPadding};
+use cbc::{Decryptor, Encryptor};
 
 /// Decrypt data with AES-128-CBC, no padding removal.
 ///
@@ -46,6 +46,31 @@ pub fn decrypt_aes256_cbc(key: &[u8], iv: &[u8], ciphertext: &[u8]) -> Result<Ve
     Decryptor::<Aes256>::new(key.into(), iv.into())
         .decrypt_padded_mut::<NoPadding>(&mut buf)
         .map_err(|e| Error::InvalidPdf(format!("AES-256-CBC: {e}")))?;
+    Ok(buf)
+}
+
+/// Encrypt data with AES-128-CBC, no padding.
+///
+/// `key` must be 16 bytes. `iv` must be 16 bytes. `plaintext` must be
+/// a multiple of 16 bytes. Returns raw encrypted bytes.
+///
+/// Used in PDF Standard Security Handler revision 6 (Revision6_Hash).
+pub fn encrypt_aes128_cbc(key: &[u8], iv: &[u8], plaintext: &[u8]) -> Result<Vec<u8>> {
+    let key: &[u8; 16] = key
+        .try_into()
+        .map_err(|_| Error::InvalidPdf("AES-128-CBC encrypt: key must be 16 bytes".into()))?;
+    let iv: &[u8; 16] = iv
+        .try_into()
+        .map_err(|_| Error::InvalidPdf("AES-128-CBC encrypt: IV must be 16 bytes".into()))?;
+    if !plaintext.len().is_multiple_of(16) {
+        return Err(Error::InvalidPdf(
+            "AES-128-CBC encrypt: plaintext length must be a multiple of 16".into(),
+        ));
+    }
+    let mut buf = plaintext.to_vec();
+    Encryptor::<Aes128>::new(key.into(), iv.into())
+        .encrypt_padded_mut::<NoPadding>(&mut buf, plaintext.len())
+        .map_err(|e| Error::InvalidPdf(format!("AES-128-CBC encrypt: {e}")))?;
     Ok(buf)
 }
 
@@ -118,6 +143,29 @@ mod tests {
     fn aes256_cbc_non_multiple_ciphertext_is_error() {
         let result = decrypt_aes256_cbc(&[0u8; 32], &[0u8; 16], &[0u8; 15]);
         assert!(result.is_err());
+    }
+
+    // AES-128-CBC encrypt: NIST SP 800-38A F.2.1 (inverse of decrypt vector)
+    #[test]
+    fn aes128_cbc_encrypt_nist_vector() {
+        let key = hex_decode("2b7e151628aed2a6abf7158809cf4f3c");
+        let iv = hex_decode("000102030405060708090a0b0c0d0e0f");
+        let plaintext =
+            hex_decode("6bc1bee22e409f96e93d7e117393172aae2d8a571e03ac9c9eb76fac45af8e51");
+        let expected =
+            hex_decode("7649abac8119b246cee98e9b12e9197d5086cb9b507219ee95db113a917678b2");
+        let result = encrypt_aes128_cbc(&key, &iv, &plaintext).unwrap();
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn aes128_cbc_encrypt_decrypt_roundtrip() {
+        let key = [0x42u8; 16];
+        let iv = [0x00u8; 16];
+        let plaintext = [0xABu8; 32]; // 2 blocks
+        let encrypted = encrypt_aes128_cbc(&key, &iv, &plaintext).unwrap();
+        let decrypted = decrypt_aes128_cbc(&key, &iv, &encrypted).unwrap();
+        assert_eq!(decrypted, plaintext);
     }
 
     fn hex_decode(s: &str) -> Vec<u8> {
