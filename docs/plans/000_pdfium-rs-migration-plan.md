@@ -236,7 +236,7 @@ let text = page.extract_text()?;
 let hits = page.find_text("quantum")?;
 ```
 
-**外部依存**: 追加なし（フォントラスタライズ不要）
+**外部依存**: 初期（ASCII/Latin系PDF）は追加なし。CJK対応実装時に `unicode-normalization` を追加。
 
 **参照すべきC++ファイル**:
 
