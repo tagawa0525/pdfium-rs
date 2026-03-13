@@ -98,16 +98,14 @@ impl<R: Read + Seek> SyntaxParser<R> {
                 // Check for reference: integer integer 'R'
                 if let PdfObject::Integer(num) = obj {
                     let saved_pos = self.pos()?;
-                    if let Ok(obj2) = self.read_object() {
-                        if let PdfObject::Integer(gen_num) = obj2 {
-                            self.skip_whitespace_and_comments()?;
-                            if let Some(b'R') = self.peek_byte()? {
-                                self.read_byte()?;
-                                return Ok(PdfObject::Reference(ObjectId::new(
-                                    num as u32,
-                                    gen_num as u16,
-                                )));
-                            }
+                    if let Ok(PdfObject::Integer(gen_num)) = self.read_object() {
+                        self.skip_whitespace_and_comments()?;
+                        if let Some(b'R') = self.peek_byte()? {
+                            self.read_byte()?;
+                            return Ok(PdfObject::Reference(ObjectId::new(
+                                num as u32,
+                                gen_num as u16,
+                            )));
                         }
                     }
                     // Not a reference, restore position
@@ -380,7 +378,7 @@ impl<R: Read + Seek> SyntaxParser<R> {
             }
         }
 
-        let mut result = Vec::with_capacity((hex_chars.len() + 1) / 2);
+        let mut result = Vec::with_capacity(hex_chars.len().div_ceil(2));
         let mut i = 0;
         while i < hex_chars.len() {
             let hi = hex_chars[i];
@@ -609,8 +607,8 @@ mod tests {
 
     #[test]
     fn parse_real() {
-        let val = parse(b"3.14").as_f64().unwrap();
-        assert!((val - 3.14).abs() < 1e-10);
+        let val = parse(b"2.72").as_f64().unwrap();
+        assert!((val - 2.72).abs() < 1e-10);
     }
 
     #[test]

@@ -119,7 +119,7 @@ mod tests {
         let mut stream = MemoryStream::new(vec![10, 20, 30, 40, 50]);
         stream.seek(SeekFrom::Start(2)).unwrap();
         let mut buf = [0u8; 1];
-        stream.read(&mut buf).unwrap();
+        stream.read_exact(&mut buf).unwrap();
         assert_eq!(buf[0], 30);
     }
 
@@ -128,7 +128,7 @@ mod tests {
         let mut stream = MemoryStream::new(vec![10, 20, 30, 40, 50]);
         stream.seek(SeekFrom::End(-2)).unwrap();
         let mut buf = [0u8; 1];
-        stream.read(&mut buf).unwrap();
+        stream.read_exact(&mut buf).unwrap();
         assert_eq!(buf[0], 40);
     }
 
@@ -138,7 +138,7 @@ mod tests {
         stream.seek(SeekFrom::Start(1)).unwrap();
         stream.seek(SeekFrom::Current(2)).unwrap();
         let mut buf = [0u8; 1];
-        stream.read(&mut buf).unwrap();
+        stream.read_exact(&mut buf).unwrap();
         assert_eq!(buf[0], 40);
     }
 
@@ -160,8 +160,8 @@ mod tests {
         let mut stream = MemoryStream::new(vec![1, 2, 3]);
         stream.seek(SeekFrom::Start(10)).unwrap();
         let mut buf = [0u8; 1];
-        let n = stream.read(&mut buf).unwrap();
-        assert_eq!(n, 0);
+        let result = stream.read_exact(&mut buf);
+        assert!(result.is_err());
     }
 
     #[test]
@@ -175,7 +175,7 @@ mod tests {
     fn pdf_read_trait_object() {
         let mut stream: Box<dyn PdfRead> = Box::new(MemoryStream::new(b"pdf data".to_vec()));
         let mut buf = [0u8; 3];
-        stream.read(&mut buf).unwrap();
+        stream.read_exact(&mut buf).unwrap();
         assert_eq!(&buf, b"pdf");
     }
 }
