@@ -136,7 +136,13 @@ impl<R: Read + Seek> Document<R> {
         if let Some(LazyObject::Unparsed { offset }) = self.objects.get(&obj_num) {
             let offset = *offset;
             self.parser.seek(offset)?;
-            let (_id, obj) = self.parser.read_indirect_object()?;
+            let (id, obj) = self.parser.read_indirect_object()?;
+            if id.num != obj_num {
+                return Err(Error::InvalidPdf(format!(
+                    "xref for object {obj_num} points to object {} at offset {offset}",
+                    id.num
+                )));
+            }
             self.objects.insert(obj_num, LazyObject::Parsed(obj));
         }
 
