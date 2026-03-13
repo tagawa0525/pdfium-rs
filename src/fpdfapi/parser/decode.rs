@@ -1,14 +1,156 @@
 use crate::error::{Error, Result};
-use crate::fpdfapi::parser::object::PdfDictionary;
+use crate::fpdfapi::parser::object::{PdfDictionary, PdfObject};
+use crate::fxcodec::{ascii_hex, ascii85, flate, lzw};
 
 /// Decode a raw stream by applying its filter pipeline.
 ///
 /// Reads `/Filter` (name or array) and `/DecodeParms` (dict or array)
 /// from the stream dictionary and applies the codec chain in order.
+///
+/// Filter arrays are applied left-to-right during decoding (outermost first).
 pub fn decode_stream(data: &[u8], dict: &PdfDictionary) -> Result<Vec<u8>> {
-    let _ = data;
-    let _ = dict;
-    Err(Error::InvalidPdf("decode_stream: not implemented".into()))
+    let filters = collect_filters(dict)?;
+    if filters.is_empty() {
+        return Ok(data.to_vec());
+    }
+
+    let parms_list = collect_decode_parms(dict, filters.len());
+
+    let mut buf = data.to_vec();
+    for (filter, parms) in filters.iter().zip(parms_list.iter()) {
+        buf = apply_filter(&buf, filter, parms.as_ref())?;
+    }
+    Ok(buf)
+}
+
+/// Collect filter names from /Filter (name or array).
+fn collect_filters(dict: &PdfDictionary) -> Result<Vec<Filter>> {
+    match dict.get(b"Filter") {
+        None => Ok(Vec::new()),
+        Some(PdfObject::Name(name)) => {
+            let f = Filter::from_name(name.as_bytes()).ok_or_else(|| {
+                Error::InvalidPdf(format!(
+                    "decode_stream: unsupported filter {:?}",
+                    name.as_bytes()
+                ))
+            })?;
+            Ok(vec![f])
+        }
+        Some(PdfObject::Array(arr)) => arr
+            .iter()
+            .map(|obj| match obj {
+                PdfObject::Name(name) => Filter::from_name(name.as_bytes()).ok_or_else(|| {
+                    Error::InvalidPdf(format!(
+                        "decode_stream: unsupported filter {:?}",
+                        name.as_bytes()
+                    ))
+                }),
+                _ => Err(Error::InvalidPdf(
+                    "decode_stream: /Filter array element is not a name".into(),
+                )),
+            })
+            .collect(),
+        _ => Err(Error::InvalidPdf(
+            "decode_stream: /Filter is not a name or array".into(),
+        )),
+    }
+}
+
+/// Collect /DecodeParms entries corresponding to each filter.
+/// Returns a Vec of Option<PdfDictionary>, one per filter.
+fn collect_decode_parms(dict: &PdfDictionary, count: usize) -> Vec<Option<PdfDictionary>> {
+    match dict.get(b"DecodeParms") {
+        None => vec![None; count],
+        Some(PdfObject::Dictionary(d)) => {
+            let mut result = vec![None; count];
+            if !result.is_empty() {
+                result[0] = Some(d.clone());
+            }
+            result
+        }
+        Some(PdfObject::Array(arr)) => arr
+            .iter()
+            .map(|obj| match obj {
+                PdfObject::Dictionary(d) => Some(d.clone()),
+                _ => None, // null or missing
+            })
+            .collect(),
+        _ => vec![None; count],
+    }
+}
+
+fn apply_filter(data: &[u8], filter: &Filter, parms: Option<&PdfDictionary>) -> Result<Vec<u8>> {
+    match filter {
+        Filter::ASCIIHexDecode => ascii_hex::decode(data),
+        Filter::ASCII85Decode => ascii85::decode(data),
+        Filter::FlateDecode => {
+            let predictor = parms.and_then(parse_flate_predictor);
+            flate::decode(data, predictor)
+        }
+        Filter::LZWDecode => {
+            let early_change = parms
+                .and_then(|p| p.get(b"EarlyChange"))
+                .and_then(|o| o.as_i32())
+                .map(|v| v != 0)
+                .unwrap_or(true);
+            lzw::decode(data, early_change)
+        }
+    }
+}
+
+/// Parse FlateDecode predictor from /DecodeParms dictionary.
+fn parse_flate_predictor(parms: &PdfDictionary) -> Option<flate::Predictor> {
+    let predictor = parms.get(b"Predictor")?.as_i32()?;
+    match predictor {
+        1 => Some(flate::Predictor::None),
+        2 => Some(flate::Predictor::Tiff),
+        10..=15 => {
+            let colors = parms
+                .get(b"Colors")
+                .and_then(|o| o.as_i32())
+                .unwrap_or(1)
+                .clamp(1, 255) as u8;
+            let bits_per_component = parms
+                .get(b"BitsPerComponent")
+                .and_then(|o| o.as_i32())
+                .unwrap_or(8)
+                .clamp(1, 16) as u8;
+            let columns = parms
+                .get(b"Columns")
+                .and_then(|o| o.as_i32())
+                .unwrap_or(1)
+                .clamp(1, 65535) as u16;
+            Some(flate::Predictor::Png {
+                colors,
+                bits_per_component,
+                columns,
+            })
+        }
+        _ => None,
+    }
+}
+
+/// Known PDF stream filters.
+// Variant names mirror PDF spec filter names exactly; the shared "Decode" suffix is intentional.
+#[allow(clippy::enum_variant_names)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Filter {
+    ASCIIHexDecode,
+    ASCII85Decode,
+    FlateDecode,
+    LZWDecode,
+}
+
+impl Filter {
+    fn from_name(name: &[u8]) -> Option<Self> {
+        match name {
+            b"ASCIIHexDecode" | b"AHx" => Some(Filter::ASCIIHexDecode),
+            b"ASCII85Decode" | b"A85" => Some(Filter::ASCII85Decode),
+            b"FlateDecode" | b"Fl" => Some(Filter::FlateDecode),
+            b"LZWDecode" | b"LZW" => Some(Filter::LZWDecode),
+            _ => None,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -40,7 +182,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn decode_no_filter() {
         let data = b"raw bytes";
         let dict = PdfDictionary::new();
@@ -49,7 +190,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn decode_ascii_hex() {
         let data = b"48656C6C6F>";
         let dict = dict_with_filter(b"ASCIIHexDecode");
@@ -58,7 +198,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn decode_ascii85() {
         let data = b"FCfN8~>";
         let dict = dict_with_filter(b"ASCII85Decode");
@@ -67,7 +206,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn decode_flate() {
         use std::io::Write;
         let mut encoder =
@@ -81,7 +219,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn decode_lzw() {
         // Encode "ABABAB" as LZW: Clear(256) A(65) B(66) AB(258) AB(258) EOD(257)
         // Using 9-bit MSB-first codes (simple fixed-width for this test)
@@ -92,7 +229,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn decode_chained_filters() {
         // PDF filter chain: [ASCII85Decode, FlateDecode]
         // Decoding order: ASCII85 first, then Flate
@@ -111,7 +247,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn decode_unknown_filter_is_error() {
         let data = b"data";
         let dict = dict_with_filter(b"RunLengthDecode");
@@ -120,7 +255,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn decode_flate_with_png_predictor() {
         use std::io::Write;
         // 2-column, 8-bit grayscale, 2 rows: [10,20] and [30,40]
