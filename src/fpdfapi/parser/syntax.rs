@@ -505,10 +505,33 @@ impl<R: Read + Seek> SyntaxParser<R> {
                 _ => {}
             }
 
-            // Read stream data based on /Length
-            let length = dict.get_i32(b"Length").unwrap_or(0) as usize;
+            // Read stream data based on /Length.
+            // /Length must be a direct integer; indirect references are not
+            // supported at this stage (would require two-pass parsing).
+            let length = dict
+                .get_i32(b"Length")
+                .ok_or_else(|| Error::InvalidPdf("stream missing integer /Length".into()))?
+                as usize;
             let mut data = vec![0u8; length];
             self.reader.read_exact(&mut data)?;
+
+            // Consume optional EOL then the required "endstream" keyword.
+            match self.peek_byte()? {
+                Some(b'\r') => {
+                    self.read_byte()?;
+                    if self.peek_byte()? == Some(b'\n') {
+                        self.read_byte()?;
+                    }
+                }
+                Some(b'\n') => {
+                    self.read_byte()?;
+                }
+                _ => {}
+            }
+            let endstream = self.read_word()?;
+            if endstream != b"endstream" {
+                return Err(Error::InvalidPdf("expected 'endstream'".into()));
+            }
 
             return Ok(PdfObject::Stream(PdfStream { dict, data }));
         }
@@ -783,6 +806,22 @@ mod tests {
             obj.as_dict().unwrap().get_name(b"Type").unwrap().as_bytes(),
             b"Page"
         );
+    }
+
+    // --- Streams ---
+
+    #[test]
+    fn parse_stream_basic() {
+        let input = b"<< /Length 5 >>\nstream\nhello\nendstream";
+        let obj = parse(input);
+        let stream = obj.as_stream().unwrap();
+        assert_eq!(stream.data, b"hello");
+    }
+
+    #[test]
+    fn parse_stream_missing_length_is_error() {
+        let result = parse_err(b"<< >>\nstream\nhello\nendstream");
+        assert!(matches!(result, Error::InvalidPdf(_)));
     }
 
     // --- Error cases ---
