@@ -2,6 +2,10 @@ use crate::error::{Error, Result};
 use crate::fpdfapi::parser::object::{PdfDictionary, PdfObject};
 use crate::fxcodec::{ascii_hex, ascii85, flate, lzw};
 
+/// Maximum size of a decoded stream (256 MiB). Protects against OOM from
+/// malicious or corrupt PDFs with degenerate compression ratios.
+const MAX_DECODED_SIZE: usize = 256 * 1024 * 1024;
+
 /// Decode a raw stream by applying its filter pipeline.
 ///
 /// Reads `/Filter` (name or array) and `/DecodeParms` (dict or array)
@@ -14,11 +18,19 @@ pub fn decode_stream(data: &[u8], dict: &PdfDictionary) -> Result<Vec<u8>> {
         return Ok(data.to_vec());
     }
 
+    // parms_list is guaranteed to have the same length as filters.
     let parms_list = collect_decode_parms(dict, filters.len());
+    debug_assert_eq!(parms_list.len(), filters.len());
 
     let mut buf = data.to_vec();
     for (filter, parms) in filters.iter().zip(parms_list.iter()) {
         buf = apply_filter(&buf, filter, parms.as_ref())?;
+        if buf.len() > MAX_DECODED_SIZE {
+            return Err(Error::InvalidPdf(format!(
+                "decode_stream: decoded size {} exceeds {MAX_DECODED_SIZE} byte limit",
+                buf.len()
+            )));
+        }
     }
     Ok(buf)
 }
@@ -68,13 +80,18 @@ fn collect_decode_parms(dict: &PdfDictionary, count: usize) -> Vec<Option<PdfDic
             }
             result
         }
-        Some(PdfObject::Array(arr)) => arr
-            .iter()
-            .map(|obj| match obj {
-                PdfObject::Dictionary(d) => Some(d.clone()),
-                _ => None, // null or missing
-            })
-            .collect(),
+        Some(PdfObject::Array(arr)) => {
+            let mut result: Vec<Option<PdfDictionary>> = arr
+                .iter()
+                .map(|obj| match obj {
+                    PdfObject::Dictionary(d) => Some(d.clone()),
+                    _ => None, // null or missing entry
+                })
+                .collect();
+            // Ensure parms_list has the same length as the filter list.
+            result.resize(count, None);
+            result
+        }
         _ => vec![None; count],
     }
 }
