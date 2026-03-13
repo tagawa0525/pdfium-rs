@@ -323,24 +323,24 @@ impl Matrix {
     }
 
     /// Compute inverse matrix.
-    pub fn inverse(&self) -> Self {
+    /// Returns `None` if the matrix is singular (determinant is zero).
+    pub fn inverse(&self) -> Option<Self> {
         let det = self.a * self.d - self.b * self.c;
 
         if det == 0.0 {
-            // Singular matrix - return identity as fallback
-            return Matrix::default();
+            return None;
         }
 
         let det_inv = 1.0 / det;
 
-        Matrix {
+        Some(Matrix {
             a: self.d * det_inv,
             b: -self.b * det_inv,
             c: -self.c * det_inv,
             d: self.a * det_inv,
             e: (self.c * self.f - self.d * self.e) * det_inv,
             f: (self.b * self.e - self.a * self.f) * det_inv,
-        }
+        })
     }
 
     /// Post-multiply translation: translate after current transformation.
@@ -805,7 +805,7 @@ mod tests {
     #[test]
     fn matrix_inverse_identity() {
         let m = Matrix::default();
-        let inv = m.inverse();
+        let inv = m.inverse().unwrap();
         assert_eq!(inv.a, 1.0);
         assert_eq!(inv.b, 0.0);
         assert_eq!(inv.c, 0.0);
@@ -822,7 +822,7 @@ mod tests {
     #[test]
     fn matrix_inverse() {
         let m = Matrix::new(3.0, 0.0, 2.0, 3.0, 1.0, 4.0);
-        let inv = m.inverse();
+        let inv = m.inverse().unwrap();
         assert!((inv.a - 0.33333334).abs() < 1e-6);
         assert_eq!(inv.b, 0.0);
         assert!((inv.c - (-0.22222222)).abs() < 1e-6);
