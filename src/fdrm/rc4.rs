@@ -1,7 +1,10 @@
+use crate::error::{Error, Result};
+
 /// RC4 stream cipher.
 ///
 /// Used in PDF Standard Security Handler revisions 2, 3, and 4.
-/// Key length: 5-16 bytes (40-128 bit).
+/// PDF Standard Security restricts key length to 5–16 bytes (40–128 bit);
+/// this implementation accepts any non-empty key.
 pub struct Rc4 {
     s: [u8; 256],
     i: u8,
@@ -10,7 +13,12 @@ pub struct Rc4 {
 
 impl Rc4 {
     /// Initialize RC4 with the given key (KSA phase).
-    pub fn new(key: &[u8]) -> Self {
+    ///
+    /// Returns `Err` if `key` is empty.
+    pub fn new(key: &[u8]) -> Result<Self> {
+        if key.is_empty() {
+            return Err(Error::InvalidPdf("RC4 key must not be empty".into()));
+        }
         let mut s = [0u8; 256];
         for (i, v) in s.iter_mut().enumerate() {
             *v = i as u8;
@@ -21,7 +29,7 @@ impl Rc4 {
             j = j.wrapping_add(s[i]).wrapping_add(key[i % n]);
             s.swap(i, j as usize);
         }
-        Rc4 { s, i: 0, j: 0 }
+        Ok(Rc4 { s, i: 0, j: 0 })
     }
 
     /// Encrypt or decrypt data in-place (RC4 is symmetric).
@@ -38,10 +46,12 @@ impl Rc4 {
 }
 
 /// Convenience: encrypt/decrypt a slice with RC4 using the given key.
-pub fn crypt(key: &[u8], data: &[u8]) -> Vec<u8> {
+///
+/// Returns `Err` if `key` is empty.
+pub fn crypt(key: &[u8], data: &[u8]) -> Result<Vec<u8>> {
     let mut out = data.to_vec();
-    Rc4::new(key).apply_keystream(&mut out);
-    out
+    Rc4::new(key)?.apply_keystream(&mut out);
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -62,7 +72,7 @@ mod tests {
             0xb2u8, 0x39, 0x63, 0x05, 0xf0, 0x3d, 0xc0, 0x27, 0xcc, 0xc3, 0x52, 0x4a, 0x0a, 0x11,
             0x18, 0xa8,
         ];
-        let result = crypt(&key, &plaintext);
+        let result = crypt(&key, &plaintext).unwrap();
         assert_eq!(result, expected);
     }
 
@@ -70,42 +80,21 @@ mod tests {
     fn rc4_symmetric() {
         let key = b"secret";
         let plaintext = b"Hello, RC4!";
-        let ciphertext = crypt(key, plaintext);
-        let recovered = crypt(key, &ciphertext);
-        assert_eq!(recovered, plaintext);
+        let ciphertext = crypt(key, plaintext).unwrap();
+        let recovered = crypt(key, &ciphertext).unwrap();
+        assert_eq!(recovered, plaintext.as_ref());
     }
 
     #[test]
     fn rc4_empty_input() {
-        let result = crypt(b"key", b"");
+        let result = crypt(b"key", b"").unwrap();
         assert!(result.is_empty());
     }
 
     #[test]
-    fn rc4_reference_comparison() {
-        // Reference RC4 using usize arithmetic
-        let key = [0x01u8, 0x02, 0x03, 0x04, 0x05];
-        let n = key.len();
-        let mut s: Vec<u8> = (0..=255u8).collect();
-        let mut j: usize = 0;
-        for i in 0..256usize {
-            j = (j + s[i] as usize + key[i % n] as usize) % 256;
-            s.swap(i, j);
-        }
-        let mut i_prga: usize = 0;
-        let mut j_prga: usize = 0;
-        let mut ref_out = [0u8; 16];
-        for byte in ref_out.iter_mut() {
-            i_prga = (i_prga + 1) % 256;
-            j_prga = (j_prga + s[i_prga] as usize) % 256;
-            s.swap(i_prga, j_prga);
-            let k = s[(s[i_prga] as usize + s[j_prga] as usize) % 256];
-            *byte ^= k;
-        }
-        eprintln!("reference first byte: 0x{:02x}", ref_out[0]);
-        let our_out = crypt(&key, &[0u8; 16]);
-        eprintln!("our first byte: 0x{:02x}", our_out[0]);
-        assert_eq!(our_out, ref_out.to_vec(), "our RC4 must match reference");
+    fn rc4_empty_key_is_error() {
+        let result = crypt(b"", b"data");
+        assert!(result.is_err());
     }
 
     #[test]
@@ -113,10 +102,10 @@ mod tests {
         let key = b"key";
         let plaintext = b"Hello, streaming RC4!";
         // Streaming should match single-call crypt
-        let mut rc4 = Rc4::new(key);
+        let mut rc4 = Rc4::new(key).unwrap();
         let mut out = plaintext.to_vec();
         rc4.apply_keystream(&mut out);
-        let expected = crypt(key, plaintext);
+        let expected = crypt(key, plaintext).unwrap();
         assert_eq!(out, expected);
     }
 }
