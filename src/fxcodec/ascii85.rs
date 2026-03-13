@@ -48,7 +48,7 @@ pub fn decode(input: &[u8]) -> Result<Vec<u8>> {
         group.push(ch - b'!');
 
         if group.len() == 5 {
-            let value = decode_group(&group, 5)?;
+            let value = decode_group(&group)?;
             output.extend_from_slice(&value.to_be_bytes());
             group.clear();
         }
@@ -66,7 +66,7 @@ pub fn decode(input: &[u8]) -> Result<Vec<u8>> {
         while group.len() < 5 {
             group.push(84); // 'u' - b'!' = 84
         }
-        let value = decode_group(&group, 5)?;
+        let value = decode_group(&group)?;
         let bytes = value.to_be_bytes();
         output.extend_from_slice(&bytes[..n_bytes]);
     }
@@ -74,9 +74,9 @@ pub fn decode(input: &[u8]) -> Result<Vec<u8>> {
     Ok(output)
 }
 
-fn decode_group(group: &[u8], len: usize) -> Result<u32> {
+fn decode_group(group: &[u8]) -> Result<u32> {
     let mut value: u64 = 0;
-    for &digit in &group[..len] {
+    for &digit in group {
         value = value * 85 + digit as u64;
     }
     if value > u32::MAX as u64 {
