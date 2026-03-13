@@ -1,9 +1,10 @@
+use md5::{Digest, Md5};
+
 /// Compute MD5 digest of the given data.
 ///
 /// Used in PDF Standard Security Handler for encryption key derivation.
 pub fn digest(data: &[u8]) -> [u8; 16] {
-    let _ = data;
-    [0u8; 16]
+    Md5::digest(data).into()
 }
 
 #[cfg(test)]
@@ -13,7 +14,6 @@ mod tests {
     // Standard MD5 test vectors from RFC 1321
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn md5_empty() {
         // MD5("") = d41d8cd98f00b204e9800998ecf8427e
         let result = digest(b"");
@@ -25,7 +25,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn md5_abc() {
         // MD5("abc") = 900150983cd24fb0d6963f7d28e17f72
         let result = digest(b"abc");
@@ -37,7 +36,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn md5_message_digest() {
         // MD5("message digest") = f96b697d7cb7938d525a2f31aaf161d0
         let result = digest(b"message digest");
