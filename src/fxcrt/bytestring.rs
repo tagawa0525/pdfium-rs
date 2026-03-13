@@ -75,6 +75,9 @@ impl PdfByteString {
     }
 
     pub fn find(&self, needle: &[u8]) -> Option<usize> {
+        if needle.is_empty() {
+            return Some(0);
+        }
         self.data.windows(needle.len()).position(|w| w == needle)
     }
 
