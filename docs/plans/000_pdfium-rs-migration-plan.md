@@ -263,7 +263,7 @@ let bitmap = page.render(300.0 /* DPI */)?;
 bitmap.save_png("output.png")?;
 ```
 
-**外部依存**: `tiny-skia`（ラスタライザ）, `jpeg-decoder`
+**外部依存**: `tiny-skia`（ラスタライザ）, `jpeg-decoder`, `png`（PNG出力）
 
 ---
 
