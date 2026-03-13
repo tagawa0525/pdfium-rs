@@ -92,13 +92,28 @@ impl<R: Read + Seek> Document<R> {
     }
 
     /// Number of pages in the document.
-    pub fn page_count(&self) -> u32 {
-        // Get /Root -> /Pages -> /Count from trailer
-        // For now, try to get it from already-parsed objects
-        // This requires resolving references, which is complex.
-        // Simple approach: look at the trailer's Root -> Pages -> Count
-        // But that requires lazy loading. For now, return 0 if not yet parsed.
-        0 // Will be properly implemented when we can resolve references
+    /// Resolves `/Root → /Pages → /Count` from the trailer.
+    pub fn page_count(&mut self) -> Result<u32> {
+        let root_ref = self
+            .trailer
+            .get(b"Root")
+            .and_then(|o| o.as_reference())
+            .ok_or_else(|| Error::InvalidPdf("trailer missing /Root".into()))?;
+
+        let pages_ref = self
+            .object(root_ref.num)?
+            .as_dict()
+            .ok_or_else(|| Error::InvalidPdf("/Root is not a dictionary".into()))?
+            .get(b"Pages")
+            .and_then(|o| o.as_reference())
+            .ok_or_else(|| Error::InvalidPdf("/Root missing /Pages".into()))?;
+
+        self.object(pages_ref.num)?
+            .as_dict()
+            .ok_or_else(|| Error::InvalidPdf("/Pages is not a dictionary".into()))?
+            .get_i32(b"Count")
+            .map(|c| c as u32)
+            .ok_or_else(|| Error::InvalidPdf("/Pages missing /Count".into()))
     }
 
     /// Get document metadata (Info dictionary).
@@ -201,8 +216,8 @@ mod tests {
     #[test]
     fn page_count_zero() {
         let data = minimal_pdf();
-        let doc = Document::from_reader(Cursor::new(data)).unwrap();
-        assert_eq!(doc.page_count(), 0);
+        let mut doc = Document::from_reader(Cursor::new(data)).unwrap();
+        assert_eq!(doc.page_count().unwrap(), 0);
     }
 
     #[test]
