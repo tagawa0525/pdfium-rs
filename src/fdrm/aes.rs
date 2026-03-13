@@ -91,8 +91,32 @@ mod tests {
     }
 
     #[test]
+    fn aes128_cbc_wrong_iv_size_is_error() {
+        let result = decrypt_aes128_cbc(&[0u8; 16], b"short", &[0u8; 16]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn aes128_cbc_non_multiple_ciphertext_is_error() {
+        let result = decrypt_aes128_cbc(&[0u8; 16], &[0u8; 16], &[0u8; 15]);
+        assert!(result.is_err());
+    }
+
+    #[test]
     fn aes256_cbc_wrong_key_size_is_error() {
         let result = decrypt_aes256_cbc(b"short", &[0u8; 16], &[0u8; 16]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn aes256_cbc_wrong_iv_size_is_error() {
+        let result = decrypt_aes256_cbc(&[0u8; 32], b"short", &[0u8; 16]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn aes256_cbc_non_multiple_ciphertext_is_error() {
+        let result = decrypt_aes256_cbc(&[0u8; 32], &[0u8; 16], &[0u8; 15]);
         assert!(result.is_err());
     }
 
