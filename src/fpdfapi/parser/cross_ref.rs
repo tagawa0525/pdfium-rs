@@ -21,15 +21,24 @@ pub struct CrossRefTable {
     pub trailer: PdfDictionary,
 }
 
+/// Maximum bytes to read for the xref+trailer section.
+/// Prevents excessive memory use on large PDFs; the xref+trailer
+/// section is typically a few KB and never exceeds a few MB.
+const MAX_XREF_READ: u64 = 2 * 1024 * 1024; // 2 MiB
+
 impl CrossRefTable {
     /// Parse cross-reference table(s) starting from the given xref offset.
-    /// Reads the entire xref+trailer section into memory to avoid borrow issues.
+    /// Reads up to [`MAX_XREF_READ`] bytes from the xref offset into memory.
     pub fn parse<R: Read + Seek>(reader: &mut R, xref_offset: u64) -> Result<Self> {
         reader.seek(SeekFrom::Start(xref_offset))?;
 
-        // Read remaining data from xref offset
-        let mut data = Vec::new();
-        reader.read_to_end(&mut data)?;
+        // Bound the read to avoid a memory spike on large PDFs.
+        let file_end = reader.seek(SeekFrom::End(0))?;
+        reader.seek(SeekFrom::Start(xref_offset))?;
+        let available = file_end.saturating_sub(xref_offset).min(MAX_XREF_READ);
+
+        let mut data = vec![0u8; available as usize];
+        reader.read_exact(&mut data)?;
 
         // Parse xref table from the in-memory buffer
         Self::parse_from_bytes(&data)
