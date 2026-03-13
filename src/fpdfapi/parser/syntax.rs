@@ -99,13 +99,16 @@ impl<R: Read + Seek> SyntaxParser<R> {
                 if let PdfObject::Integer(num) = obj {
                     let saved_pos = self.pos()?;
                     if let Ok(PdfObject::Integer(gen_num)) = self.read_object() {
-                        self.skip_whitespace_and_comments()?;
-                        if let Some(b'R') = self.peek_byte()? {
-                            self.read_byte()?;
-                            return Ok(PdfObject::Reference(ObjectId::new(
-                                num as u32,
-                                gen_num as u16,
-                            )));
+                        // Validate ranges before casting: negative or out-of-range
+                        // values cannot form a valid PDF reference.
+                        if let (Ok(obj_num), Ok(obj_gen)) =
+                            (u32::try_from(num), u16::try_from(gen_num))
+                        {
+                            self.skip_whitespace_and_comments()?;
+                            if let Some(b'R') = self.peek_byte()? {
+                                self.read_byte()?;
+                                return Ok(PdfObject::Reference(ObjectId::new(obj_num, obj_gen)));
+                            }
                         }
                     }
                     // Not a reference, restore position
