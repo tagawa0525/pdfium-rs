@@ -5,7 +5,8 @@ use std::path::Path;
 
 use crate::error::{Error, Result};
 use crate::fpdfapi::parser::cross_ref::{CrossRefTable, XRefEntry, find_startxref};
-use crate::fpdfapi::parser::object::{PdfDictionary, PdfObject};
+use crate::fpdfapi::parser::object::{PdfDictionary, PdfObject, PdfStream};
+use crate::fpdfapi::parser::security::SecurityHandler;
 use crate::fpdfapi::parser::syntax::SyntaxParser;
 
 /// Lazy object storage. Objects are parsed on demand.
@@ -54,6 +55,7 @@ pub struct Document<R: Read + Seek> {
     parser: SyntaxParser<R>,
     objects: HashMap<u32, LazyObject>,
     trailer: PdfDictionary,
+    security: Option<SecurityHandler>,
 }
 
 impl Document<BufReader<File>> {
@@ -62,6 +64,13 @@ impl Document<BufReader<File>> {
         let file = File::open(path)?;
         let reader = BufReader::new(file);
         Self::from_reader(reader)
+    }
+
+    /// Open a password-protected PDF file from a path.
+    pub fn open_with_password(path: impl AsRef<Path>, password: &[u8]) -> Result<Self> {
+        let file = File::open(path)?;
+        let reader = BufReader::new(file);
+        Self::from_reader_with_password(reader, password)
     }
 }
 
@@ -88,7 +97,34 @@ impl<R: Read + Seek> Document<R> {
             parser,
             objects,
             trailer: xref.trailer,
+            security: None,
         })
+    }
+
+    /// Open an encrypted PDF from any readable + seekable stream.
+    ///
+    /// If the PDF is not encrypted, the password is ignored and the
+    /// document opens normally.
+    pub fn from_reader_with_password(_reader: R, _password: &[u8]) -> Result<Self> {
+        todo!()
+    }
+
+    /// Whether this document is encrypted.
+    pub fn is_encrypted(&self) -> bool {
+        self.security.is_some()
+    }
+
+    /// Decode a stream: decrypt (if encrypted) then apply filter pipeline.
+    ///
+    /// `obj_num` and `gen_num` identify the indirect object that owns
+    /// the stream (needed for per-object key derivation).
+    pub fn decode_stream(
+        &self,
+        _stream: &PdfStream,
+        _obj_num: u32,
+        _gen_num: u16,
+    ) -> Result<Vec<u8>> {
+        todo!()
     }
 
     /// Number of pages in the document.
@@ -174,6 +210,7 @@ impl<R: Read + Seek> Document<R> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::fxcrt::bytestring::PdfByteString;
     use std::io::Cursor;
 
     /// Minimal valid PDF for testing.
@@ -264,5 +301,220 @@ mod tests {
         let mut doc = Document::from_reader(Cursor::new(data)).unwrap();
         let catalog = doc.catalog().unwrap();
         assert_eq!(catalog.get_name(b"Type").unwrap().as_bytes(), b"Catalog");
+    }
+
+    // --- Encryption integration tests ---
+
+    /// Build a minimal RC4-encrypted PDF in memory.
+    ///
+    /// Uses revision 2, 40-bit key, empty user password.
+    /// The /Encrypt dict is object 4, referenced from the trailer.
+    fn encrypted_rc4_pdf() -> Vec<u8> {
+        use crate::fdrm::{md5, rc4};
+        use crate::fpdfapi::parser::security;
+
+        let file_id = b"0123456789abcdef"; // 16-byte file ID
+        let password = b""; // empty user password
+
+        // --- Compute encryption parameters ---
+        // We need /O and /U values, plus the encryption key.
+        // For revision 2, key_length = 5 (40-bit).
+
+        // Compute /O: encrypt padded owner password with MD5(padded_owner)
+        let owner_padded = security::tests::pad_password_helper(b"");
+        let owner_key = md5::digest(&owner_padded);
+        let o_value = rc4::crypt(&owner_key[..5], &owner_padded).expect("rc4 crypt");
+
+        // Compute encryption key: Algorithm 2
+        let p_value: i32 = -4; // all permissions
+        let encrypt_key = security::tests::calc_encrypt_key_helper(
+            password, &o_value, p_value, file_id, 5, 2, true,
+        );
+
+        // Compute /U: Algorithm 4 (R2) — encrypt padding with key
+        let u_value = security::tests::compute_u_r2_helper(&encrypt_key);
+
+        // --- Build PDF bytes ---
+        let mut pdf = Vec::new();
+        pdf.extend_from_slice(b"%PDF-1.4\n");
+
+        // Object 1: Catalog (not encrypted — /Type values are names, not strings)
+        let obj1_offset = pdf.len();
+        pdf.extend_from_slice(b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+
+        // Object 2: Pages
+        let obj2_offset = pdf.len();
+        pdf.extend_from_slice(b"2 0 obj\n<< /Type /Pages /Kids [] /Count 0 >>\nendobj\n");
+
+        // Object 3: Info with encrypted string
+        // We encrypt the string "Secret Title" using the per-object key for obj 3 gen 0
+        let title_plain = b"Secret Title";
+        let obj3_key =
+            security::tests::derive_object_key_helper(&encrypt_key, 3, 0, security::Cipher::Rc4);
+        let title_encrypted = rc4::crypt(&obj3_key, title_plain).expect("rc4 crypt");
+        let title_hex: String = title_encrypted.iter().map(|b| format!("{b:02X}")).collect();
+
+        let obj3_offset = pdf.len();
+        pdf.extend_from_slice(format!("3 0 obj\n<< /Title <{title_hex}> >>\nendobj\n").as_bytes());
+
+        // Object 4: Encrypt dictionary
+        let o_hex: String = o_value.iter().map(|b| format!("{b:02X}")).collect();
+        let u_hex: String = u_value.iter().map(|b| format!("{b:02X}")).collect();
+        let obj4_offset = pdf.len();
+        pdf.extend_from_slice(
+            format!(
+                "4 0 obj\n<< /Filter /Standard /V 1 /R 2 /Length 40 /P {p_value} /O <{o_hex}> /U <{u_hex}> >>\nendobj\n"
+            )
+            .as_bytes(),
+        );
+
+        // File ID as hex string
+        let file_id_hex: String = file_id.iter().map(|b| format!("{b:02X}")).collect();
+
+        // Cross-reference table
+        let xref_offset = pdf.len();
+        pdf.extend_from_slice(b"xref\n");
+        pdf.extend_from_slice(b"0 5\n");
+        pdf.extend_from_slice(b"0000000000 65535 f \n");
+        pdf.extend_from_slice(format!("{:010} 00000 n \n", obj1_offset).as_bytes());
+        pdf.extend_from_slice(format!("{:010} 00000 n \n", obj2_offset).as_bytes());
+        pdf.extend_from_slice(format!("{:010} 00000 n \n", obj3_offset).as_bytes());
+        pdf.extend_from_slice(format!("{:010} 00000 n \n", obj4_offset).as_bytes());
+
+        // Trailer with /Encrypt and /ID
+        pdf.extend_from_slice(
+            format!(
+                "trailer\n<< /Size 5 /Root 1 0 R /Info 3 0 R /Encrypt 4 0 R /ID [<{file_id_hex}> <{file_id_hex}>] >>\n"
+            )
+            .as_bytes(),
+        );
+        pdf.extend_from_slice(format!("startxref\n{xref_offset}\n%%EOF\n").as_bytes());
+
+        pdf
+    }
+
+    #[test]
+    fn unencrypted_pdf_is_not_encrypted() {
+        let data = minimal_pdf();
+        let doc = Document::from_reader(Cursor::new(data)).unwrap();
+        assert!(!doc.is_encrypted());
+    }
+
+    #[test]
+    #[ignore = "not yet implemented"]
+    fn open_encrypted_pdf_with_correct_password() {
+        let data = encrypted_rc4_pdf();
+        let doc = Document::from_reader_with_password(Cursor::new(data), b"").unwrap();
+        assert!(doc.is_encrypted());
+    }
+
+    #[test]
+    #[ignore = "not yet implemented"]
+    fn open_encrypted_pdf_wrong_password_is_error() {
+        let data = encrypted_rc4_pdf();
+        let result = Document::from_reader_with_password(Cursor::new(data), b"wrong");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    #[ignore = "not yet implemented"]
+    fn encrypted_pdf_unencrypted_open_detects_encryption() {
+        // Opening an encrypted PDF without a password via from_reader
+        // should detect /Encrypt in trailer and return an error.
+        let data = encrypted_rc4_pdf();
+        let result = Document::from_reader(Cursor::new(data));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    #[ignore = "not yet implemented"]
+    fn open_with_password_on_unencrypted_pdf_succeeds() {
+        // Passing a password to an unencrypted PDF should just work.
+        let data = minimal_pdf();
+        let doc = Document::from_reader_with_password(Cursor::new(data), b"any").unwrap();
+        assert!(!doc.is_encrypted());
+    }
+
+    #[test]
+    #[ignore = "not yet implemented"]
+    fn decode_stream_unencrypted() {
+        // Build a PDF with a FlateDecode stream and verify decode_stream works
+        use std::io::Write;
+        let original = b"Hello, decoded stream!";
+        let mut encoder =
+            flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
+        encoder.write_all(original).unwrap();
+        let compressed = encoder.finish().unwrap();
+
+        let stream = PdfStream {
+            dict: {
+                let mut d = PdfDictionary::new();
+                d.set(
+                    "Filter",
+                    PdfObject::Name(PdfByteString::from("FlateDecode")),
+                );
+                d.set("Length", PdfObject::Integer(compressed.len() as i32));
+                d
+            },
+            data: compressed,
+        };
+
+        let data = minimal_pdf();
+        let doc = Document::from_reader(Cursor::new(data)).unwrap();
+        let decoded = doc.decode_stream(&stream, 1, 0).unwrap();
+        assert_eq!(decoded, original);
+    }
+
+    #[test]
+    #[ignore = "not yet implemented"]
+    fn decode_stream_encrypted_rc4() {
+        // Build encrypted PDF, open with password, decrypt + decode a stream
+        use crate::fdrm::rc4;
+        use crate::fpdfapi::parser::security;
+        use std::io::Write;
+
+        let file_id = b"0123456789abcdef";
+        let password = b"";
+        let p_value: i32 = -4;
+
+        // Encryption setup (same as encrypted_rc4_pdf)
+        let owner_padded = security::tests::pad_password_helper(b"");
+        let owner_key = crate::fdrm::md5::digest(&owner_padded);
+        let o_value = rc4::crypt(&owner_key[..5], &owner_padded).expect("rc4");
+        let encrypt_key = security::tests::calc_encrypt_key_helper(
+            password, &o_value, p_value, file_id, 5, 2, true,
+        );
+
+        // Object 5 will be a stream: FlateDecode compressed, then RC4 encrypted
+        let original = b"Stream content here";
+        let mut encoder =
+            flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
+        encoder.write_all(original).unwrap();
+        let compressed = encoder.finish().unwrap();
+
+        // Encrypt compressed data with per-object key for obj 5 gen 0
+        let obj5_key =
+            security::tests::derive_object_key_helper(&encrypt_key, 5, 0, security::Cipher::Rc4);
+        let encrypted_stream = rc4::crypt(&obj5_key, &compressed).expect("rc4");
+
+        // Build stream object
+        let stream = PdfStream {
+            dict: {
+                let mut d = PdfDictionary::new();
+                d.set(
+                    "Filter",
+                    PdfObject::Name(PdfByteString::from("FlateDecode")),
+                );
+                d.set("Length", PdfObject::Integer(encrypted_stream.len() as i32));
+                d
+            },
+            data: encrypted_stream,
+        };
+
+        // The test verifies: decrypt(RC4) → decompress(Flate) = original
+        let data = encrypted_rc4_pdf();
+        let doc = Document::from_reader_with_password(Cursor::new(data), b"").unwrap();
+        let decoded = doc.decode_stream(&stream, 5, 0).unwrap();
+        assert_eq!(decoded, original);
     }
 }
