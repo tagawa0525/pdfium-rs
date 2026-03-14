@@ -11,8 +11,18 @@ pub fn render_text(
     text_obj: &TextObject,
     page_to_device: tiny_skia::Transform,
 ) {
-    // Mode 3 = invisible
-    if text_obj.text_rendering_mode == 3 {
+    // PDF text rendering modes (PDF spec §9.3.6):
+    //   0 = fill only
+    //   1 = stroke only
+    //   2 = fill + stroke
+    //   3 = invisible
+    //   4 = fill + clip (clip deferred; render like fill)
+    //   5 = stroke + clip (clip deferred; render like stroke)
+    //   6 = fill + stroke + clip (clip deferred; render like fill+stroke)
+    //   7 = invisible + clip (clip deferred; no painting)
+    let mode = text_obj.text_rendering_mode;
+    // Modes 3 and 7 produce no paint (invisible)
+    if mode == 3 || mode == 7 {
         return;
     }
 
@@ -31,8 +41,9 @@ pub fn render_text(
     // Build shape matrix: rotation/scale from CTM × text_matrix (no translation)
     let shape = shape_matrix(&text_obj.ctm, &text_obj.text_matrix);
 
-    let should_fill = text_obj.text_rendering_mode == 0 || text_obj.text_rendering_mode == 2;
-    let should_stroke = text_obj.text_rendering_mode == 1 || text_obj.text_rendering_mode == 2;
+    // Modes 4-6 paint the same as 0-2 (clipping path update is deferred).
+    let should_fill = matches!(mode, 0 | 2 | 4 | 6);
+    let should_stroke = matches!(mode, 1 | 2 | 5 | 6);
 
     for entry in &text_obj.char_entries {
         // Resolve character code → Unicode → glyph ID
