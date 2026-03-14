@@ -319,6 +319,15 @@ TDDサイクル（RED → GREEN → REFACTOR を別コミット）に従う。
 - **参照比較**: C++の`*_unittest.cpp`のテストロジックをRustに移植し、正確性の仕様として利用
 - **Property-based testing**: トークナイザ/パーサに`proptest`を検討（パニックしないことの検証）
 
+### フェーズ完了時の統合テスト
+
+各フェーズの実装完了後、C++版PDFiumの `*_embeddertest.cpp` から該当機能の統合テストを移植する。
+実際のPDFフィクスチャ（`tests/fixtures/`にチェックイン）を使い、パース→処理→出力のエンドツーエンドパイプラインを検証する。
+
+- ユニットテスト（合成データ）では検出できない実PDFとの乖離を早期に発見できる
+- Phase 3で `/Length` 間接参照やBT..ET内フォント切り替えなど、統合テストで初めて露呈したバグがあった
+- 統合テスト用のPDFは `reference/pdfium/testing/resources/` から `tests/fixtures/` にコピーしてリポジトリに含める
+
 ## 検証方法
 
 各フェーズ完了時の検証:
