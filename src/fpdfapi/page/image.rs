@@ -104,17 +104,26 @@ fn raw_to_rgba(
             }
         }
         1 => {
-            // 1-bit monochrome: 8 pixels packed per byte, MSB first.
+            // 1-bit monochrome is only valid for DeviceGray.
+            if color_space != ColorSpace::DeviceGray {
+                return Err(Error::InvalidPdf(
+                    "image XObject: BitsPerComponent=1 is only supported for DeviceGray".into(),
+                ));
+            }
+            // 8 pixels packed per byte, MSB first.
+            let row_bytes = width.div_ceil(8) as usize;
+            let expected = height as usize * row_bytes;
+            if raw.len() < expected {
+                return Err(Error::InvalidPdf(format!(
+                    "image XObject: 1bpc expected {expected} bytes, got {}",
+                    raw.len()
+                )));
+            }
             for y in 0..height {
-                let row_bytes = width.div_ceil(8);
-                let row_start = (y * row_bytes) as usize;
+                let row_start = y as usize * row_bytes;
                 for x in 0..width {
                     let byte_idx = row_start + (x / 8) as usize;
-                    let bit = if byte_idx < raw.len() {
-                        (raw[byte_idx] >> (7 - (x % 8))) & 1
-                    } else {
-                        0
-                    };
+                    let bit = (raw[byte_idx] >> (7 - (x % 8))) & 1;
                     let v = if bit == 1 { 255u8 } else { 0u8 };
                     rgba.push(v);
                     rgba.push(v);
