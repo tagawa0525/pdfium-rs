@@ -419,7 +419,7 @@ fn aes256_check_password(password: &[u8], dict: &EncryptDict) -> Option<Vec<u8>>
     }
 
     // Try owner password
-    if dict.owner_hash.len() >= 48 {
+    if dict.owner_hash.len() >= 48 && dict.user_hash.len() >= 48 {
         let validation_salt = &dict.owner_hash[32..40];
         let key_salt = &dict.owner_hash[40..48];
 
