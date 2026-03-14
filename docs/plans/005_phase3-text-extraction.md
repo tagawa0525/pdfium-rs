@@ -1,6 +1,6 @@
 # Phase 3: テキスト抽出
 
-Status: **IN PROGRESS** — Step 7/8 完了
+Status: **COMPLETED** — Step 8/8 完了
 
 ## Context
 
@@ -277,7 +277,7 @@ pub struct CharInfo {
 
 **ファイル**: `src/fpdftext/mod.rs`, `src/fpdftext/text_page.rs`
 
-### Step 8: テキスト検索 + 公開API
+### Step 8: テキスト検索 + 公開API ✅
 
 **TextFind** (`text_find.rs`):
 

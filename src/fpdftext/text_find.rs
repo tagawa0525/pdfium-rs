@@ -9,20 +9,12 @@ pub struct TextMatch {
 }
 
 /// Options controlling how text search is performed.
+#[derive(Default)]
 pub struct FindOptions {
     /// If `true`, the search is case-sensitive. Default: `false`.
     pub case_sensitive: bool,
     /// If `true`, only whole-word matches are returned. Default: `false`.
     pub whole_word: bool,
-}
-
-impl Default for FindOptions {
-    fn default() -> Self {
-        FindOptions {
-            case_sensitive: false,
-            whole_word: false,
-        }
-    }
 }
 
 /// Text search over a [`TextPage`].
@@ -33,8 +25,60 @@ impl TextFind {
     ///
     /// Returns character-index ranges. Matches are non-overlapping and returned
     /// in order of first occurrence.
-    pub fn find_all(_text_page: &TextPage, _query: &str, _options: &FindOptions) -> Vec<TextMatch> {
-        todo!("TextFind::find_all — implement in GREEN commit")
+    pub fn find_all(text_page: &TextPage, query: &str, options: &FindOptions) -> Vec<TextMatch> {
+        if query.is_empty() {
+            return Vec::new();
+        }
+
+        // Collect the page's unicode chars for scanning.
+        let page_chars: Vec<char> = (0..text_page.char_count())
+            .filter_map(|i| text_page.char_info(i))
+            .map(|ci| ci.unicode)
+            .collect();
+
+        let query_chars: Vec<char> = query.chars().collect();
+        let qlen = query_chars.len();
+        let plen = page_chars.len();
+
+        let mut matches = Vec::new();
+
+        let eq: fn(char, char) -> bool = if options.case_sensitive {
+            |a, b| a == b
+        } else {
+            // ASCII-only case folding (Phase 3 scope).
+            |a: char, b: char| a.eq_ignore_ascii_case(&b)
+        };
+
+        let mut i = 0;
+        while i + qlen <= plen {
+            // Check if query matches at position i.
+            if query_chars
+                .iter()
+                .zip(&page_chars[i..i + qlen])
+                .all(|(&qc, &pc)| eq(qc, pc))
+            {
+                // Whole-word check: surrounding chars must be non-alphanumeric.
+                let word_ok = if options.whole_word {
+                    let before_ok = i == 0 || !page_chars[i - 1].is_alphanumeric();
+                    let after_ok = i + qlen == plen || !page_chars[i + qlen].is_alphanumeric();
+                    before_ok && after_ok
+                } else {
+                    true
+                };
+
+                if word_ok {
+                    matches.push(TextMatch {
+                        start: i,
+                        end: i + qlen,
+                    });
+                    i += qlen; // Advance past the match (non-overlapping).
+                    continue;
+                }
+            }
+            i += 1;
+        }
+
+        matches
     }
 }
 
@@ -112,7 +156,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn find_exact_match() {
         let tp = make_text_page(b"Hello");
         let opts = FindOptions::default();
@@ -123,7 +166,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn find_case_insensitive_default() {
         let tp = make_text_page(b"Hello");
         let opts = FindOptions::default();
@@ -132,7 +174,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn find_case_sensitive_no_match() {
         let tp = make_text_page(b"Hello");
         let opts = FindOptions {
@@ -144,7 +185,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn find_no_match_returns_empty() {
         let tp = make_text_page(b"Hello");
         let opts = FindOptions::default();
@@ -153,7 +193,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn page_find_text_returns_matches() {
         let mut doc = Document::from_reader(Cursor::new(text_pdf(b"Hello"))).unwrap();
         let page = doc.page(0).unwrap();
