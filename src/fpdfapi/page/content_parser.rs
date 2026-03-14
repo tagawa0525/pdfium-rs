@@ -264,8 +264,14 @@ struct Parser<'a, R: Read + Seek> {
     bt_font_size: f64,
     /// Current path being built by path construction operators (m, l, c, etc.).
     current_path: Path,
-    /// Whether clipping was requested on the current path (W/W*).
-    clip_pending: bool,
+    /// Current point in user space, updated by path construction operators.
+    current_point: Point,
+    /// Start of the current subpath (set by `m`), used by `h` to close.
+    subpath_start: Point,
+    /// Pending clip path and rule, set by `W`/`W*`.
+    /// Stored here so that the clip survives the subsequent `n` operator.
+    /// Actual clipping application is deferred to a future rendering phase.
+    pending_clip: Option<(Path, FillRule)>,
 }
 
 impl<'a, R: Read + Seek> Parser<'a, R> {
@@ -287,7 +293,9 @@ impl<'a, R: Read + Seek> Parser<'a, R> {
             bt_font: None,
             bt_font_size: 0.0,
             current_path: Path::new(),
-            clip_pending: false,
+            current_point: Point::default(),
+            subpath_start: Point::default(),
+            pending_clip: None,
         }
     }
 
@@ -514,14 +522,19 @@ impl<'a, R: Read + Seek> Parser<'a, R> {
                 if let (Some(Token::Number(y)), Some(Token::Number(x))) =
                     (self.stack.pop(), self.stack.pop())
                 {
-                    self.current_path.move_to(Point::new(x as f32, y as f32));
+                    let pt = Point::new(x as f32, y as f32);
+                    self.current_path.move_to(pt);
+                    self.current_point = pt;
+                    self.subpath_start = pt;
                 }
             }
             b"l" => {
                 if let (Some(Token::Number(y)), Some(Token::Number(x))) =
                     (self.stack.pop(), self.stack.pop())
                 {
-                    self.current_path.line_to(Point::new(x as f32, y as f32));
+                    let pt = Point::new(x as f32, y as f32);
+                    self.current_path.line_to(pt);
+                    self.current_point = pt;
                 }
             }
             b"c" => {
@@ -540,11 +553,13 @@ impl<'a, R: Read + Seek> Parser<'a, R> {
                     self.stack.pop(),
                     self.stack.pop(),
                 ) {
+                    let end = Point::new(x3 as f32, y3 as f32);
                     self.current_path.cubic_to(
                         Point::new(x1 as f32, y1 as f32),
                         Point::new(x2 as f32, y2 as f32),
-                        Point::new(x3 as f32, y3 as f32),
+                        end,
                     );
+                    self.current_point = end;
                 }
             }
             b"v" => {
@@ -560,17 +575,13 @@ impl<'a, R: Read + Seek> Parser<'a, R> {
                     self.stack.pop(),
                     self.stack.pop(),
                 ) {
-                    let cp = self
-                        .current_path
-                        .points
-                        .last()
-                        .map(|p| p.point)
-                        .unwrap_or_default();
+                    let end = Point::new(x3 as f32, y3 as f32);
                     self.current_path.cubic_to(
-                        cp,
+                        self.current_point,
                         Point::new(x2 as f32, y2 as f32),
-                        Point::new(x3 as f32, y3 as f32),
+                        end,
                     );
+                    self.current_point = end;
                 }
             }
             b"y" => {
@@ -586,15 +597,15 @@ impl<'a, R: Read + Seek> Parser<'a, R> {
                     self.stack.pop(),
                     self.stack.pop(),
                 ) {
-                    self.current_path.cubic_to(
-                        Point::new(x1 as f32, y1 as f32),
-                        Point::new(x3 as f32, y3 as f32),
-                        Point::new(x3 as f32, y3 as f32),
-                    );
+                    let end = Point::new(x3 as f32, y3 as f32);
+                    self.current_path
+                        .cubic_to(Point::new(x1 as f32, y1 as f32), end, end);
+                    self.current_point = end;
                 }
             }
             b"h" => {
                 self.current_path.close();
+                self.current_point = self.subpath_start;
             }
             b"re" => {
                 if let (
@@ -608,8 +619,11 @@ impl<'a, R: Read + Seek> Parser<'a, R> {
                     self.stack.pop(),
                     self.stack.pop(),
                 ) {
+                    let start = Point::new(x as f32, y as f32);
                     self.current_path
                         .append_rect(x as f32, y as f32, w as f32, h as f32);
+                    self.subpath_start = start;
+                    self.current_point = start;
                 }
             }
 
@@ -632,16 +646,20 @@ impl<'a, R: Read + Seek> Parser<'a, R> {
                 self.emit_path(FillRule::EvenOdd, true);
             }
             b"n" => {
-                // Discard path (no-op painting, clipping may still apply)
+                // Discard path (no-op painting); pending_clip survives as per PDF spec.
                 self.current_path = Path::new();
-                self.clip_pending = false;
+                self.current_point = Point::default();
+                self.subpath_start = Point::default();
             }
 
             // ── Clipping ─────────────────────────────────────────────────────
-            b"W" | b"W*" => {
-                // Clipping is applied by the next painting operator.
-                // For now, just flag it — actual clip implementation is deferred.
-                self.clip_pending = true;
+            b"W" => {
+                // Snapshot the current path as a pending clip (survives `n`).
+                // Actual clip application is deferred to a future rendering phase.
+                self.pending_clip = Some((self.current_path.clone(), FillRule::NonZero));
+            }
+            b"W*" => {
+                self.pending_clip = Some((self.current_path.clone(), FillRule::EvenOdd));
             }
 
             // ── Color operators ──────────────────────────────────────────────
@@ -801,6 +819,8 @@ impl<'a, R: Read + Seek> Parser<'a, R> {
     /// Emit the current path as a PathObject with the given painting attributes.
     fn emit_path(&mut self, fill_rule: FillRule, stroke: bool) {
         let path = std::mem::replace(&mut self.current_path, Path::new());
+        self.current_point = Point::default();
+        self.subpath_start = Point::default();
         if path.points.is_empty() {
             return;
         }
@@ -814,9 +834,10 @@ impl<'a, R: Read + Seek> Parser<'a, R> {
             line_cap: self.gs.line_cap,
             line_join: self.gs.line_join,
             miter_limit: self.gs.miter_limit,
+            dash_array: self.gs.dash_array.clone(),
+            dash_phase: self.gs.dash_phase,
             ctm: self.gs.ctm,
         })));
-        self.clip_pending = false;
     }
 
     /// Pop `n` numbers from the stack (bottom-to-top order in result).
