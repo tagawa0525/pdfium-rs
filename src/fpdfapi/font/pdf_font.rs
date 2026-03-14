@@ -16,7 +16,7 @@ pub enum PdfFont {
         /// Index of the first character code covered by `widths`.
         first_char: u32,
         /// Character widths in 1/1000 of text-space units, starting at `first_char`.
-        widths: Vec<u16>,
+        widths: Vec<f64>,
         to_unicode: Option<ToUnicodeMap>,
     },
     /// CIDFont (Type0), Type3, or any subtype not yet supported.
@@ -41,7 +41,7 @@ impl PdfFont {
             return Ok(PdfFont::Unsupported { base_font });
         }
 
-        let encoding = parse_encoding(font_dict);
+        let encoding = parse_encoding(font_dict, doc);
         let first_char = font_dict.get_i32(b"FirstChar").unwrap_or(0).max(0) as u32;
         let widths = parse_widths(font_dict);
 
@@ -107,7 +107,7 @@ impl PdfFont {
                 if code >= *first_char {
                     let idx = (code - first_char) as usize;
                     if idx < widths.len() {
-                        return widths[idx] as f64;
+                        return widths[idx];
                     }
                 }
                 1000.0
@@ -211,65 +211,83 @@ fn glyph_name_to_char(name: &[u8]) -> Option<char> {
     }
 }
 
-/// Parse the `/Encoding` entry of a font dictionary.
-fn parse_encoding(font_dict: &PdfDictionary) -> FontEncoding {
-    match font_dict.get(b"Encoding") {
-        Some(PdfObject::Name(name)) => {
-            let enc = match name.as_bytes() {
-                b"WinAnsiEncoding" => PredefinedEncoding::WinAnsi,
-                b"MacRomanEncoding" => PredefinedEncoding::MacRoman,
-                b"StandardEncoding" => PredefinedEncoding::Standard,
-                b"MacExpertEncoding" => PredefinedEncoding::MacExpert,
-                b"SymbolEncoding" => PredefinedEncoding::Symbol,
-                b"ZapfDingbatsEncoding" => PredefinedEncoding::ZapfDingbats,
-                _ => PredefinedEncoding::Standard, // unknown name → Standard
-            };
-            FontEncoding::Predefined(enc)
-        }
-        Some(PdfObject::Dictionary(enc_dict)) => {
-            let base = enc_dict
-                .get_name(b"BaseEncoding")
-                .and_then(|n| match n.as_bytes() {
-                    b"WinAnsiEncoding" => Some(PredefinedEncoding::WinAnsi),
-                    b"MacRomanEncoding" => Some(PredefinedEncoding::MacRoman),
-                    b"StandardEncoding" => Some(PredefinedEncoding::Standard),
-                    _ => None,
-                })
-                .unwrap_or(PredefinedEncoding::Standard);
+/// Map a `/Encoding` or `/BaseEncoding` name to a `PredefinedEncoding`.
+fn name_to_predefined(name: &[u8]) -> PredefinedEncoding {
+    match name {
+        b"WinAnsiEncoding" => PredefinedEncoding::WinAnsi,
+        b"MacRomanEncoding" => PredefinedEncoding::MacRoman,
+        b"StandardEncoding" => PredefinedEncoding::Standard,
+        b"PDFDocEncoding" => PredefinedEncoding::PdfDoc,
+        b"MacExpertEncoding" => PredefinedEncoding::MacExpert,
+        b"SymbolEncoding" => PredefinedEncoding::Symbol,
+        b"ZapfDingbatsEncoding" => PredefinedEncoding::ZapfDingbats,
+        _ => PredefinedEncoding::Standard,
+    }
+}
 
-            let mut overrides: Vec<(u8, char)> = Vec::new();
-            if let Some(diffs) = enc_dict.get_array(b"Differences") {
-                let mut code: u8 = 0;
-                for item in diffs {
-                    match item {
-                        PdfObject::Integer(n) => {
-                            code = (*n).clamp(0, 255) as u8;
-                        }
-                        PdfObject::Name(name) => {
-                            if let Some(ch) = glyph_name_to_char(name.as_bytes()) {
-                                overrides.push((code, ch));
-                            }
-                            code = code.wrapping_add(1);
-                        }
-                        _ => {}
-                    }
+/// Build a `FontEncoding::Custom` from an encoding dictionary.
+fn parse_encoding_dict(enc_dict: &PdfDictionary) -> FontEncoding {
+    let base = enc_dict
+        .get_name(b"BaseEncoding")
+        .map(|n| name_to_predefined(n.as_bytes()))
+        .unwrap_or(PredefinedEncoding::Standard);
+
+    let mut overrides: Vec<(u8, char)> = Vec::new();
+    if let Some(diffs) = enc_dict.get_array(b"Differences") {
+        let mut code: u8 = 0;
+        for item in diffs {
+            match item {
+                PdfObject::Integer(n) => {
+                    code = (*n).clamp(0, 255) as u8;
                 }
+                PdfObject::Name(name) => {
+                    if let Some(ch) = glyph_name_to_char(name.as_bytes()) {
+                        overrides.push((code, ch));
+                    }
+                    code = code.wrapping_add(1);
+                }
+                _ => {}
             }
-            FontEncoding::Custom(CustomEncoding { base, overrides })
         }
+    }
+    FontEncoding::Custom(CustomEncoding { base, overrides })
+}
+
+/// Parse the `/Encoding` entry of a font dictionary.
+///
+/// Handles three forms: a name (`/WinAnsiEncoding`), a direct dictionary
+/// (`<< /BaseEncoding ... /Differences [...] >>`), or an indirect reference
+/// to either of those.
+fn parse_encoding<R: Read + Seek>(
+    font_dict: &PdfDictionary,
+    doc: &mut Document<R>,
+) -> FontEncoding {
+    let encoding_obj = match font_dict.get(b"Encoding") {
+        Some(obj) => obj.clone(),
+        None => return FontEncoding::Predefined(PredefinedEncoding::Standard),
+    };
+
+    // Resolve indirect reference, if any.
+    let resolved = if let PdfObject::Reference(id) = &encoding_obj {
+        doc.object(id.num).ok().cloned()
+    } else {
+        Some(encoding_obj)
+    };
+
+    match resolved.as_ref() {
+        Some(PdfObject::Name(name)) => {
+            FontEncoding::Predefined(name_to_predefined(name.as_bytes()))
+        }
+        Some(PdfObject::Dictionary(enc_dict)) => parse_encoding_dict(enc_dict),
         _ => FontEncoding::Predefined(PredefinedEncoding::Standard),
     }
 }
 
-/// Parse `/Widths` array into a `Vec<u16>`.
-fn parse_widths(font_dict: &PdfDictionary) -> Vec<u16> {
+/// Parse `/Widths` array into a `Vec<f64>`.
+fn parse_widths(font_dict: &PdfDictionary) -> Vec<f64> {
     font_dict
         .get_array(b"Widths")
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|o| o.as_f64().map(|v| v.clamp(0.0, 65535.0) as u16))
-                .collect()
-        })
+        .map(|arr| arr.iter().filter_map(|o| o.as_f64()).collect())
         .unwrap_or_default()
 }
 
@@ -565,7 +583,8 @@ mod tests {
             "Encoding",
             PdfObject::Name(PdfByteString::from("WinAnsiEncoding")),
         );
-        let enc = parse_encoding(&d);
+        let mut doc = Document::from_reader(Cursor::new(minimal_pdf())).unwrap();
+        let enc = parse_encoding(&d, &mut doc);
         assert!(matches!(
             enc,
             FontEncoding::Predefined(PredefinedEncoding::WinAnsi)
@@ -575,7 +594,8 @@ mod tests {
     #[test]
     fn parse_encoding_no_entry_defaults_to_standard() {
         let d = PdfDictionary::new();
-        let enc = parse_encoding(&d);
+        let mut doc = Document::from_reader(Cursor::new(minimal_pdf())).unwrap();
+        let enc = parse_encoding(&d, &mut doc);
         assert!(matches!(
             enc,
             FontEncoding::Predefined(PredefinedEncoding::Standard)

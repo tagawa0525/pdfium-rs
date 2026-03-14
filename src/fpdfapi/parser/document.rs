@@ -385,9 +385,10 @@ impl<R: Read + Seek> Document<R> {
         let mut merged = inherit.merge(&dict);
 
         // /Resources may be an indirect reference (common in real PDFs).
-        // `PageInherit::merge` only handles direct dictionaries; resolve here.
-        if merged.resources.is_none()
-            && let Some(res_ref) = dict.get_reference(b"Resources")
+        // `PageInherit::merge` only handles direct dictionaries via `get_dict`,
+        // so resolve indirect references here.  Child-level /Resources must
+        // always shadow parent-level, hence no `is_none()` guard.
+        if let Some(res_ref) = dict.get_reference(b"Resources")
             && let Ok(obj) = self.object(res_ref.num)
             && let Some(d) = obj.as_dict()
         {
