@@ -198,28 +198,36 @@ fn skip_whitespace(data: &[u8], pos: &mut usize) {
 }
 
 /// Read a `<hexhex...>` token, hex-decoding the contents and returning the decoded bytes.
+///
+/// Conforms to PDF spec §7.3.4.3:
+/// - Whitespace inside `<…>` is ignored.
+/// - An odd number of hex digits is allowed; the last nibble is padded with 0.
 fn read_hex_token(data: &[u8], pos: &mut usize) -> Option<Vec<u8>> {
     if *pos >= data.len() || data[*pos] != b'<' {
         return None;
     }
     *pos += 1; // skip '<'
-    let start = *pos;
-    while *pos < data.len() && data[*pos] != b'>' {
-        *pos += 1;
-    }
-    let hex = &data[start..*pos];
-    *pos += 1; // skip '>'
 
-    // Decode hex pairs to bytes
-    if !hex.len().is_multiple_of(2) {
-        return None;
+    // Collect non-whitespace hex nibbles until '>'
+    let mut nibbles: Vec<u8> = Vec::new();
+    while *pos < data.len() && data[*pos] != b'>' {
+        let b = data[*pos];
+        *pos += 1;
+        if b.is_ascii_whitespace() {
+            continue;
+        }
+        nibbles.push(hex_nibble(b)?);
     }
-    let mut bytes = Vec::with_capacity(hex.len() / 2);
-    for chunk in hex.chunks(2) {
-        let hi = hex_nibble(chunk[0])?;
-        let lo = hex_nibble(chunk[1])?;
-        bytes.push((hi << 4) | lo);
+    if *pos < data.len() {
+        *pos += 1; // skip '>'
     }
+
+    // If odd number of nibbles, pad with a trailing 0
+    if nibbles.len() % 2 == 1 {
+        nibbles.push(0);
+    }
+
+    let bytes = nibbles.chunks(2).map(|c| (c[0] << 4) | c[1]).collect();
     Some(bytes)
 }
 
