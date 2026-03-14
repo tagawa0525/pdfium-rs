@@ -247,6 +247,10 @@ fn calc_encrypt_key(
     revision: u32,
     encrypt_metadata: bool,
 ) -> Vec<u8> {
+    // MD5 output is 16 bytes; PDF spec allows key_length 5-16.
+    // Clamp to prevent out-of-bounds access on the digest.
+    let key_length = key_length.clamp(1, 16);
+
     let padded = pad_password(password);
     let mut input = Vec::with_capacity(32 + o.len() + 4 + file_id.len() + 4);
     input.extend_from_slice(&padded);
@@ -667,6 +671,21 @@ pub(crate) mod tests {
 
         let result = calc_encrypt_key(b"", &o, p, file_id, key_length, 3, true);
         assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn calc_encrypt_key_oversized_key_length_is_clamped() {
+        // key_length > 16 should be clamped to 16 (MD5 output size)
+        let o = [0xAAu8; 32];
+        let p: i32 = -4;
+        let file_id = b"0123456789abcdef";
+
+        // key_length=32 would panic without clamping; with clamp it should
+        // produce the same result as key_length=16
+        let result_clamped = calc_encrypt_key(b"", &o, p, file_id, 32, 2, true);
+        let result_16 = calc_encrypt_key(b"", &o, p, file_id, 16, 2, true);
+        assert_eq!(result_clamped, result_16);
+        assert_eq!(result_clamped.len(), 16);
     }
 
     #[test]
