@@ -7,6 +7,9 @@ use super::context::page_to_device_matrix;
 use super::image_renderer::render_image;
 use super::path_renderer::render_path;
 
+/// Maximum output dimension in pixels (16384 × 16384 prevents OOM).
+const MAX_DIMENSION: u32 = 16_384;
+
 /// Render a PDF page to an RGBA bitmap at the given DPI.
 ///
 /// 1. Compute the page-to-device transformation matrix.
@@ -14,11 +17,25 @@ use super::path_renderer::render_path;
 /// 3. Iterate over `page.objects` and dispatch to path/image renderers.
 /// 4. Convert the `Pixmap` (premultiplied alpha) to a `Bitmap` (straight alpha).
 pub fn render(page: &Page, dpi: f32) -> Result<Bitmap> {
-    let matrix = page_to_device_matrix(page, dpi);
-    let scale = dpi / 72.0;
-    let width = (page.media_box.width() * scale).round() as u32;
-    let height = (page.media_box.height() * scale).round() as u32;
+    if !dpi.is_finite() || dpi <= 0.0 {
+        return Err(Error::InvalidPdf(
+            "render: dpi must be a positive finite number".into(),
+        ));
+    }
 
+    let scale = dpi / 72.0;
+    let page_w = page.media_box.width().max(0.0);
+    let page_h = page.media_box.height().max(0.0);
+    let width = (page_w * scale).round() as u32;
+    let height = (page_h * scale).round() as u32;
+
+    if width > MAX_DIMENSION || height > MAX_DIMENSION {
+        return Err(Error::InvalidPdf(format!(
+            "render: output dimensions {width}×{height} exceed {MAX_DIMENSION} px limit"
+        )));
+    }
+
+    let matrix = page_to_device_matrix(page, dpi);
     let mut pixmap = tiny_skia::Pixmap::new(width, height)
         .ok_or_else(|| Error::InvalidPdf("render: cannot create pixmap".into()))?;
 
