@@ -78,7 +78,10 @@ fn raw_to_rgba(
     bpc: u32,
     color_space: ColorSpace,
 ) -> Result<Vec<u8>> {
-    let n_pixels = (width * height) as usize;
+    let n_pixels = width
+        .checked_mul(height)
+        .ok_or_else(|| Error::InvalidPdf("image XObject: dimensions overflow".into()))?
+        as usize;
     let components = color_space.num_components();
     let mut rgba = Vec::with_capacity(n_pixels * 4);
 
