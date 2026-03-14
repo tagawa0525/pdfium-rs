@@ -13,7 +13,7 @@ fn print_usage() {
 fn main() {
     let args: Vec<String> = env::args().collect();
 
-    if args.len() < 3 {
+    if args.len() < 4 {
         print_usage();
         std::process::exit(1);
     }
