@@ -2,7 +2,7 @@ use std::io::{Read, Seek};
 
 use crate::error::Result;
 use crate::fpdfapi::parser::document::Document;
-use crate::fpdfapi::parser::object::PdfDictionary;
+use crate::fpdfapi::parser::object::{PdfDictionary, PdfObject};
 use crate::fpdfdoc::action::Action;
 use crate::fxcrt::coordinates::Rect;
 
@@ -42,7 +42,6 @@ pub enum AnnotSubtype {
 }
 
 impl AnnotSubtype {
-    #[allow(dead_code)]
     fn from_name(name: &[u8]) -> Self {
         match name {
             b"Text" => AnnotSubtype::Text,
@@ -132,7 +131,6 @@ pub struct Annotation {
 }
 
 impl Annotation {
-    #[allow(dead_code)]
     fn from_dict(dict: PdfDictionary) -> Self {
         let subtype = dict
             .get_name(b"Subtype")
@@ -192,7 +190,48 @@ pub trait AnnotationsExt {
 
 impl<R: Read + Seek> AnnotationsExt for Document<R> {
     fn page_annotations(&mut self, page_index: u32) -> Result<Vec<Annotation>> {
-        todo!("page_index={page_index}")
+        let page_dict = self.page_dict(page_index)?;
+
+        // /Annots may be absent (no annotations) or an empty array
+        let annots_obj = match page_dict.get(b"Annots") {
+            Some(obj) => obj.clone(),
+            None => return Ok(vec![]),
+        };
+
+        // Resolve indirect reference to the array if needed
+        let annot_refs: Vec<u32> = match annots_obj {
+            PdfObject::Array(arr) => arr
+                .iter()
+                .filter_map(|o| o.as_reference().map(|id| id.num))
+                .collect(),
+            PdfObject::Reference(id) => {
+                // /Annots itself is an indirect reference to the array
+                self.object(id.num)?
+                    .as_array()
+                    .map(|a| {
+                        a.iter()
+                            .filter_map(|o| o.as_reference().map(|r| r.num))
+                            .collect()
+                    })
+                    .unwrap_or_default()
+            }
+            _ => return Ok(vec![]),
+        };
+
+        let mut result = Vec::with_capacity(annot_refs.len());
+        for ref_num in annot_refs {
+            let dict = self
+                .object(ref_num)?
+                .as_dict()
+                .ok_or_else(|| {
+                    crate::error::Error::InvalidPdf(format!(
+                        "annotation object {ref_num} is not a dictionary"
+                    ))
+                })?
+                .clone();
+            result.push(Annotation::from_dict(dict));
+        }
+        Ok(result)
     }
 }
 
@@ -410,7 +449,7 @@ mod tests {
     // --- page_annotations (integration, requires Document) ---
 
     #[test]
-    #[ignore = "not yet implemented"]
+
     fn page_annotations_empty_annots_array() {
         use crate::fpdfapi::parser::document::Document;
         use std::io::Cursor;
@@ -422,7 +461,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
+
     fn page_annotations_text_annot() {
         use crate::fpdfapi::parser::document::Document;
         use std::io::Cursor;
