@@ -373,9 +373,9 @@ cargo test integration_fpdfdoc
 | Step | 内容                          | 状態 |
 | ---- | ----------------------------- | ---- |
 | 1    | Dest 型 + モジュール scaffold | done |
-| 2    | Action 型                     | todo |
-| 3    | Bookmark ツリー               | todo |
-| 4    | Annotation + page_dict        | todo |
-| 5    | NameTree + Link               | todo |
+| 2    | Action 型                     | done |
+| 3    | Bookmark ツリー               | done |
+| 4    | Annotation + page_dict        | done |
+| 5    | NameTree + Link               | done |
 | 6    | InteractiveForm (読み取り)    | todo |
 | 7    | 統合テスト + 公開 API         | todo |
