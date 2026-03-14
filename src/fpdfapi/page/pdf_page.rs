@@ -15,6 +15,16 @@ pub struct Page {
     pub objects: Vec<PageObject>,
 }
 
+impl Page {
+    /// Extract all text from this page in reading order.
+    ///
+    /// Builds a [`TextPage`] and returns its text. Synthetic spaces and
+    /// newlines are inserted based on glyph positions.
+    pub fn extract_text(&self) -> String {
+        todo!("Page::extract_text — implement in GREEN commit")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::io::Cursor;
