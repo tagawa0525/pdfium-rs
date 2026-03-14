@@ -442,9 +442,51 @@ fn parse_permissions(p: i32) -> Permissions {
     }
 }
 
+/// Test helpers exposed to other modules within the crate.
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
+
+    /// Expose `pad_password` for integration tests.
+    pub fn pad_password_helper(password: &[u8]) -> [u8; 32] {
+        pad_password(password)
+    }
+
+    /// Expose `calc_encrypt_key` for integration tests.
+    pub fn calc_encrypt_key_helper(
+        password: &[u8],
+        o: &[u8],
+        p: i32,
+        file_id: &[u8],
+        key_length: usize,
+        revision: u32,
+        encrypt_metadata: bool,
+    ) -> Vec<u8> {
+        calc_encrypt_key(
+            password,
+            o,
+            p,
+            file_id,
+            key_length,
+            revision,
+            encrypt_metadata,
+        )
+    }
+
+    /// Expose `compute_u_r2` for integration tests.
+    pub fn compute_u_r2_helper(key: &[u8]) -> [u8; 32] {
+        compute_u_r2(key)
+    }
+
+    /// Expose `derive_object_key` for integration tests.
+    pub fn derive_object_key_helper(
+        key: &[u8],
+        obj_num: u32,
+        gen_num: u16,
+        cipher: Cipher,
+    ) -> Vec<u8> {
+        derive_object_key(key, obj_num, gen_num, cipher)
+    }
 
     // ---------------------------------------------------------------
     // pad_password
