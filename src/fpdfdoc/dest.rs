@@ -19,11 +19,14 @@ pub enum ZoomMode {
 /// A resolved PDF destination (page + zoom).
 ///
 /// Corresponds to C++ `CPDF_Dest`.
+///
+/// `params` preserves PDF `null` as `None` so callers can distinguish "omitted"
+/// from an explicit `0` coordinate — e.g., an XYZ zoom of `0` means "keep current".
 #[derive(Debug, Clone, PartialEq)]
 pub struct Dest {
     pub page_index: Option<u32>,
     pub zoom_mode: ZoomMode,
-    pub params: Vec<f32>,
+    pub params: Vec<Option<f32>>,
 }
 
 impl Dest {
@@ -48,10 +51,10 @@ impl Dest {
             })
             .unwrap_or(ZoomMode::Unknown);
 
-        let params: Vec<f32> = arr
+        let params: Vec<Option<f32>> = arr
             .iter()
             .skip(1)
-            .map(|obj| obj.as_f64().map(|v| v as f32).unwrap_or(0.0))
+            .map(|obj| obj.as_f64().map(|v| v as f32))
             .collect();
 
         Dest {
@@ -68,14 +71,10 @@ impl Dest {
             return None;
         }
         Some((
-            Self::non_zero_param(&self.params, 0),
-            Self::non_zero_param(&self.params, 1),
-            Self::non_zero_param(&self.params, 2),
+            self.params.first().copied().flatten(),
+            self.params.get(1).copied().flatten(),
+            self.params.get(2).copied().flatten(),
         ))
-    }
-
-    fn non_zero_param(params: &[f32], index: usize) -> Option<f32> {
-        params.get(index).copied().filter(|&v| v != 0.0)
     }
 }
 
@@ -109,7 +108,7 @@ mod tests {
         let dest = Dest::from_array(&arr, Some(0));
         assert_eq!(dest.zoom_mode, ZoomMode::XYZ);
         assert_eq!(dest.page_index, Some(0));
-        assert_eq!(dest.params, vec![100.0f32, 200.0, 1.5]);
+        assert_eq!(dest.params, vec![Some(100.0f32), Some(200.0), Some(1.5)]);
     }
 
     #[test]
@@ -127,7 +126,7 @@ mod tests {
         let arr = [name("FitH"), real(300.0)];
         let dest = Dest::from_array(&arr, Some(1));
         assert_eq!(dest.zoom_mode, ZoomMode::FitH);
-        assert_eq!(dest.params, vec![300.0f32]);
+        assert_eq!(dest.params, vec![Some(300.0f32)]);
     }
 
     #[test]
@@ -136,7 +135,7 @@ mod tests {
         let arr = [name("FitV"), real(50.0)];
         let dest = Dest::from_array(&arr, None);
         assert_eq!(dest.zoom_mode, ZoomMode::FitV);
-        assert_eq!(dest.params, vec![50.0f32]);
+        assert_eq!(dest.params, vec![Some(50.0f32)]);
     }
 
     #[test]
@@ -151,7 +150,10 @@ mod tests {
         ];
         let dest = Dest::from_array(&arr, Some(0));
         assert_eq!(dest.zoom_mode, ZoomMode::FitR);
-        assert_eq!(dest.params, vec![10.0f32, 20.0, 300.0, 400.0]);
+        assert_eq!(
+            dest.params,
+            vec![Some(10.0f32), Some(20.0), Some(300.0), Some(400.0)]
+        );
     }
 
     #[test]
@@ -169,7 +171,7 @@ mod tests {
         let arr = [name("FitBH"), real(500.0)];
         let dest = Dest::from_array(&arr, Some(0));
         assert_eq!(dest.zoom_mode, ZoomMode::FitBH);
-        assert_eq!(dest.params, vec![500.0f32]);
+        assert_eq!(dest.params, vec![Some(500.0f32)]);
     }
 
     #[test]
@@ -178,7 +180,7 @@ mod tests {
         let arr = [name("FitBV"), integer(72)];
         let dest = Dest::from_array(&arr, Some(0));
         assert_eq!(dest.zoom_mode, ZoomMode::FitBV);
-        assert_eq!(dest.params, vec![72.0f32]);
+        assert_eq!(dest.params, vec![Some(72.0f32)]);
     }
 
     #[test]
@@ -249,6 +251,21 @@ mod tests {
     fn integer_params_converted_to_f32() {
         let arr = [name("XYZ"), integer(100), integer(200), integer(1)];
         let dest = Dest::from_array(&arr, Some(0));
-        assert_eq!(dest.params, vec![100.0f32, 200.0, 1.0]);
+        assert_eq!(dest.params, vec![Some(100.0f32), Some(200.0), Some(1.0)]);
+    }
+
+    // --- Explicit zero coordinates ---
+
+    #[test]
+    fn xyz_explicit_zero_not_null() {
+        // PDF XYZ with left=0, top=0, zoom=0 means "retain current position"
+        // These must round-trip as Some(0.0), not None.
+        let arr = [name("XYZ"), real(0.0), real(0.0), real(0.0)];
+        let dest = Dest::from_array(&arr, Some(0));
+        assert_eq!(dest.params, vec![Some(0.0f32), Some(0.0), Some(0.0)]);
+        let (left, top, zoom) = dest.xyz().unwrap();
+        assert_eq!(left, Some(0.0f32));
+        assert_eq!(top, Some(0.0f32));
+        assert_eq!(zoom, Some(0.0f32));
     }
 }
