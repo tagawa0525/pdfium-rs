@@ -1,3 +1,3 @@
 pub mod encoding;
-pub mod font;
+pub mod pdf_font;
 pub mod to_unicode;

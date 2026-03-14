@@ -1,9 +1,7 @@
 use std::io::{Read, Seek};
 
 use crate::error::Result;
-use crate::fpdfapi::font::encoding::{
-    CustomEncoding, FontEncoding, PredefinedEncoding, unicode_from_predefined,
-};
+use crate::fpdfapi::font::encoding::{CustomEncoding, FontEncoding, PredefinedEncoding};
 use crate::fpdfapi::font::to_unicode::ToUnicodeMap;
 use crate::fpdfapi::parser::document::Document;
 use crate::fpdfapi::parser::object::{PdfDictionary, PdfObject};
@@ -33,7 +31,40 @@ impl PdfFont {
         font_dict: &PdfDictionary,
         doc: &mut Document<R>,
     ) -> Result<PdfFont> {
-        todo!()
+        let base_font = base_font_name(font_dict);
+        let subtype = font_dict
+            .get_name(b"Subtype")
+            .and_then(|s| s.as_str().map(|s| s.to_string()))
+            .unwrap_or_default();
+
+        if !matches!(subtype.as_str(), "Type1" | "TrueType" | "MMType1") {
+            return Ok(PdfFont::Unsupported { base_font });
+        }
+
+        let encoding = parse_encoding(font_dict);
+        let first_char = font_dict.get_i32(b"FirstChar").unwrap_or(0).max(0) as u32;
+        let widths = parse_widths(font_dict);
+
+        // Resolve /ToUnicode stream (clone to release borrow before decode)
+        let to_unicode = if let Some(tu_ref) = font_dict.get_reference(b"ToUnicode") {
+            let stream_opt = doc.object(tu_ref.num)?.as_stream().cloned();
+            if let Some(stream) = stream_opt {
+                let data = doc.decode_stream(&stream, tu_ref.num, tu_ref.gen_num)?;
+                Some(ToUnicodeMap::parse(&data))
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        Ok(PdfFont::Simple {
+            base_font,
+            encoding,
+            first_char,
+            widths,
+            to_unicode,
+        })
     }
 
     /// Convert a single-byte character code to a Unicode string.
@@ -41,7 +72,27 @@ impl PdfFont {
     /// `/ToUnicode` is consulted first; falls back to the encoding table.
     /// Returns `None` if no mapping exists.
     pub fn unicode_from_char_code(&self, code: u32) -> Option<String> {
-        todo!()
+        match self {
+            PdfFont::Simple {
+                encoding,
+                to_unicode,
+                ..
+            } => {
+                // ToUnicode takes priority
+                if let Some(map) = to_unicode
+                    && let Some(s) = map.lookup(code)
+                {
+                    return Some(s.to_string());
+                }
+                // Fall back to encoding table
+                if code <= 0xFF {
+                    encoding.decode(code as u8).map(|ch| ch.to_string())
+                } else {
+                    None
+                }
+            }
+            PdfFont::Unsupported { .. } => None,
+        }
     }
 
     /// Return the advance width of a character in 1/1000 text-space units.
@@ -49,7 +100,20 @@ impl PdfFont {
     /// Returns `1000.0` as the default when the code is out of the widths array range
     /// or for unsupported fonts.
     pub fn char_width(&self, code: u32) -> f64 {
-        todo!()
+        match self {
+            PdfFont::Simple {
+                first_char, widths, ..
+            } => {
+                if code >= *first_char {
+                    let idx = (code - first_char) as usize;
+                    if idx < widths.len() {
+                        return widths[idx] as f64;
+                    }
+                }
+                1000.0
+            }
+            PdfFont::Unsupported { .. } => 1000.0,
+        }
     }
 }
 
@@ -312,7 +376,6 @@ mod tests {
     // -----------------------------------------------------------------------
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn load_type1_is_simple_variant() {
         let mut doc = Document::from_reader(Cursor::new(minimal_pdf())).unwrap();
         let dict = type1_winansi_dict();
@@ -321,7 +384,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn load_truetype_is_simple_variant() {
         let mut d = PdfDictionary::new();
         d.set("Type", PdfObject::Name(PdfByteString::from("Font")));
@@ -333,7 +395,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn load_type0_is_unsupported() {
         let mut d = PdfDictionary::new();
         d.set("Type", PdfObject::Name(PdfByteString::from("Font")));
@@ -345,7 +406,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn load_type3_is_unsupported() {
         let mut d = PdfDictionary::new();
         d.set("Type", PdfObject::Name(PdfByteString::from("Font")));
@@ -360,7 +420,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn load_with_differences_encoding() {
         let mut d = type1_winansi_dict();
         let enc_dict = {
@@ -388,7 +447,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn load_with_to_unicode_stream() {
         // Font dict references object 3 as ToUnicode
         let mut d = type1_winansi_dict();
@@ -407,7 +465,6 @@ mod tests {
     // -----------------------------------------------------------------------
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn unicode_via_encoding_winansi() {
         let mut doc = Document::from_reader(Cursor::new(minimal_pdf())).unwrap();
         let font = PdfFont::load(&type1_winansi_dict(), &mut doc).unwrap();
@@ -416,7 +473,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn unicode_returns_none_for_undefined_code() {
         let mut doc = Document::from_reader(Cursor::new(minimal_pdf())).unwrap();
         let font = PdfFont::load(&type1_winansi_dict(), &mut doc).unwrap();
@@ -425,7 +481,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn to_unicode_takes_priority_over_encoding() {
         let mut d = type1_winansi_dict();
         d.set(
@@ -441,7 +496,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn unsupported_font_unicode_returns_none() {
         let mut d = PdfDictionary::new();
         d.set("Type", PdfObject::Name(PdfByteString::from("Font")));
@@ -457,7 +511,6 @@ mod tests {
     // -----------------------------------------------------------------------
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn char_width_in_range() {
         let mut doc = Document::from_reader(Cursor::new(minimal_pdf())).unwrap();
         let font = PdfFont::load(&type1_winansi_dict(), &mut doc).unwrap();
@@ -469,7 +522,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn char_width_out_of_range_returns_default() {
         let mut doc = Document::from_reader(Cursor::new(minimal_pdf())).unwrap();
         let font = PdfFont::load(&type1_winansi_dict(), &mut doc).unwrap();
@@ -478,7 +530,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn char_width_no_widths_returns_default() {
         let mut d = PdfDictionary::new();
         d.set("Type", PdfObject::Name(PdfByteString::from("Font")));
@@ -493,7 +544,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn unsupported_font_char_width_returns_default() {
         let mut d = PdfDictionary::new();
         d.set("Type", PdfObject::Name(PdfByteString::from("Font")));
@@ -509,7 +559,6 @@ mod tests {
     // -----------------------------------------------------------------------
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn parse_encoding_named_winansi() {
         let mut d = PdfDictionary::new();
         d.set(
@@ -524,7 +573,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn parse_encoding_no_entry_defaults_to_standard() {
         let d = PdfDictionary::new();
         let enc = parse_encoding(&d);
