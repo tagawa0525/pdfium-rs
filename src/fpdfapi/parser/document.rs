@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufReader, Read, Seek};
@@ -135,7 +136,13 @@ impl<R: Read + Seek> Document<R> {
                     if let Some(LazyObject::Unparsed { offset }) = objects.get(&id.num) {
                         let mut tmp_parser = SyntaxParser::new(&mut reader)?;
                         tmp_parser.seek(*offset)?;
-                        let (_, obj) = tmp_parser.read_indirect_object()?;
+                        let (parsed_id, obj) = tmp_parser.read_indirect_object()?;
+                        if parsed_id.num != id.num {
+                            return Err(Error::InvalidPdf(format!(
+                                "xref for /Encrypt object {} points to object {} at offset {}",
+                                id.num, parsed_id.num, offset
+                            )));
+                        }
                         obj
                     } else {
                         return Err(Error::InvalidPdf(
@@ -153,6 +160,11 @@ impl<R: Read + Seek> Document<R> {
 
             let ed = encrypt_dict::parse_encrypt_dict(encrypt_pdf_dict)?;
             let file_id = encrypt_dict::extract_file_id(&xref.trailer);
+            if file_id.is_empty() {
+                return Err(Error::InvalidPdf(
+                    "encrypted PDF requires /ID in trailer".into(),
+                ));
+            }
             let handler = SecurityHandler::new(&ed, &file_id, password)?;
             Some(handler)
         } else {
@@ -180,9 +192,9 @@ impl<R: Read + Seek> Document<R> {
     /// the stream (needed for per-object key derivation).
     pub fn decode_stream(&self, stream: &PdfStream, obj_num: u32, gen_num: u16) -> Result<Vec<u8>> {
         let raw = if let Some(ref handler) = self.security {
-            handler.decrypt_bytes(obj_num, gen_num, &stream.data)?
+            Cow::Owned(handler.decrypt_bytes(obj_num, gen_num, &stream.data)?)
         } else {
-            stream.data.clone()
+            Cow::Borrowed(&stream.data)
         };
         decode::decode_stream(&raw, &stream.dict)
     }

@@ -5,8 +5,10 @@ use crate::fpdfapi::parser::security::{Cipher, EncryptDict};
 /// Parse an `EncryptDict` from a PDF `/Encrypt` dictionary.
 ///
 /// Reads `/Filter`, `/V`, `/R`, `/Length`, `/O`, `/U`, `/P`, `/CF`,
-/// `/StmF`, `/StrF`, `/EncryptMetadata`, and R5+ entries
-/// (`/OE`, `/UE`, `/Perms`).
+/// `/EncryptMetadata`, and R5+ entries (`/OE`, `/UE`, `/Perms`).
+///
+/// Note: `/StmF` and `/StrF` are not yet read; the cipher is determined
+/// solely from `/V` and `/CF`→`/StdCF`→`/CFM`.
 pub fn parse_encrypt_dict(dict: &PdfDictionary) -> Result<EncryptDict> {
     // /Filter must be /Standard
     let filter = dict
@@ -19,7 +21,9 @@ pub fn parse_encrypt_dict(dict: &PdfDictionary) -> Result<EncryptDict> {
         )));
     }
 
-    let v = dict.get_i32(b"V").unwrap_or(0);
+    let v = dict
+        .get_i32(b"V")
+        .ok_or_else(|| Error::InvalidPdf("/Encrypt missing /V".into()))?;
     let revision = dict
         .get_i32(b"R")
         .ok_or_else(|| Error::InvalidPdf("/Encrypt missing /R".into()))? as u32;
@@ -29,7 +33,7 @@ pub fn parse_encrypt_dict(dict: &PdfDictionary) -> Result<EncryptDict> {
     let key_length = (length_bits / 8) as usize;
 
     // Determine cipher from /V and /CF
-    let cipher = determine_cipher(v, dict);
+    let cipher = determine_cipher(v, dict)?;
 
     // Override key_length for AES-256
     let key_length = if cipher == Cipher::Aes256 {
@@ -101,9 +105,9 @@ pub fn extract_file_id(trailer: &PdfDictionary) -> Vec<u8> {
 }
 
 /// Determine the cipher from the /V value and /CF sub-dictionaries.
-fn determine_cipher(v: i32, dict: &PdfDictionary) -> Cipher {
+fn determine_cipher(v: i32, dict: &PdfDictionary) -> Result<Cipher> {
     match v {
-        1 | 2 => Cipher::Rc4,
+        1 | 2 => Ok(Cipher::Rc4),
         4 => {
             // Check /CF -> /StdCF -> /CFM for AES
             let cfm = dict
@@ -112,8 +116,8 @@ fn determine_cipher(v: i32, dict: &PdfDictionary) -> Cipher {
                 .and_then(|stdcf| stdcf.get_name(b"CFM"))
                 .map(|n| n.as_bytes().to_vec());
             match cfm.as_deref() {
-                Some(b"AESV2") => Cipher::Aes128,
-                _ => Cipher::Rc4, // V4 default or V4RC4
+                Some(b"AESV2") => Ok(Cipher::Aes128),
+                _ => Ok(Cipher::Rc4), // V4 default or V4RC4
             }
         }
         5 => {
@@ -124,11 +128,11 @@ fn determine_cipher(v: i32, dict: &PdfDictionary) -> Cipher {
                 .and_then(|stdcf| stdcf.get_name(b"CFM"))
                 .map(|n| n.as_bytes().to_vec());
             match cfm.as_deref() {
-                Some(b"AESV3") => Cipher::Aes256,
-                _ => Cipher::Aes128, // fallback
+                Some(b"AESV3") => Ok(Cipher::Aes256),
+                _ => Err(Error::InvalidPdf("V=5 requires AESV3 cipher".into())),
             }
         }
-        _ => Cipher::None,
+        _ => Err(Error::InvalidPdf(format!("unsupported /V value: {v}"))),
     }
 }
 
@@ -275,5 +279,50 @@ mod tests {
         let trailer = PdfDictionary::new();
         let file_id = extract_file_id(&trailer);
         assert!(file_id.is_empty());
+    }
+
+    #[test]
+    fn determine_cipher_v5_non_aesv3_is_error() {
+        // V=5 without AESV3 CFM should be an error
+        let mut dict = PdfDictionary::new();
+        dict.set("Filter", PdfObject::Name(PdfByteString::from("Standard")));
+        dict.set("V", PdfObject::Integer(5));
+        dict.set("R", PdfObject::Integer(6));
+        dict.set("Length", PdfObject::Integer(256));
+        dict.set("P", PdfObject::Integer(-4));
+        dict.set("O", PdfObject::String(PdfByteString::from(vec![0u8; 48])));
+        dict.set("U", PdfObject::String(PdfByteString::from(vec![0u8; 48])));
+        dict.set("OE", PdfObject::String(PdfByteString::from(vec![0u8; 32])));
+        dict.set("UE", PdfObject::String(PdfByteString::from(vec![0u8; 32])));
+        dict.set(
+            "Perms",
+            PdfObject::String(PdfByteString::from(vec![0u8; 16])),
+        );
+
+        // Set CFM to AESV2 (wrong for V=5)
+        let mut stdcf = PdfDictionary::new();
+        stdcf.set("CFM", PdfObject::Name(PdfByteString::from("AESV2")));
+        let mut cf = PdfDictionary::new();
+        cf.set("StdCF", PdfObject::Dictionary(stdcf));
+        dict.set("CF", PdfObject::Dictionary(cf));
+
+        let result = parse_encrypt_dict(&dict);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn determine_cipher_unknown_v_is_error() {
+        // Unknown /V value should be an error
+        let mut dict = PdfDictionary::new();
+        dict.set("Filter", PdfObject::Name(PdfByteString::from("Standard")));
+        dict.set("V", PdfObject::Integer(99));
+        dict.set("R", PdfObject::Integer(2));
+        dict.set("Length", PdfObject::Integer(40));
+        dict.set("P", PdfObject::Integer(-4));
+        dict.set("O", PdfObject::String(PdfByteString::from(vec![0u8; 32])));
+        dict.set("U", PdfObject::String(PdfByteString::from(vec![0u8; 32])));
+
+        let result = parse_encrypt_dict(&dict);
+        assert!(result.is_err());
     }
 }

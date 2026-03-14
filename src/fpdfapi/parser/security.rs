@@ -247,6 +247,11 @@ fn calc_encrypt_key(
     revision: u32,
     encrypt_metadata: bool,
 ) -> Vec<u8> {
+    // MD5 output is 16 bytes; PDF spec mandates key_length 5-16.
+    // Lower bound is 1 (not 5) to accept malformed input without panicking;
+    // upper bound is 16 to stay within the MD5 digest size.
+    let key_length = key_length.clamp(1, 16);
+
     let padded = pad_password(password);
     let mut input = Vec::with_capacity(32 + o.len() + 4 + file_id.len() + 4);
     input.extend_from_slice(&padded);
@@ -312,6 +317,9 @@ fn check_user_password(password: &[u8], dict: &EncryptDict, file_id: &[u8]) -> O
             return Some(key);
         }
     } else {
+        if dict.user_hash.len() < 16 {
+            return None;
+        }
         let computed_u = compute_u_r3(&key, file_id);
         // Only compare first 16 bytes for R3+
         if computed_u[..16] == dict.user_hash[..16] {
@@ -390,7 +398,7 @@ fn aes256_check_password(password: &[u8], dict: &EncryptDict) -> Option<Vec<u8>>
         let key_salt = &dict.user_hash[40..48];
 
         let hash = if dict.revision == 6 {
-            revision6_hash(password, validation_salt, &[])
+            revision6_hash(password, validation_salt, &[])?
         } else {
             sha256::digest(&[password, validation_salt].concat())
         };
@@ -398,7 +406,7 @@ fn aes256_check_password(password: &[u8], dict: &EncryptDict) -> Option<Vec<u8>>
         if hash[..] == dict.user_hash[..32] {
             // Recover key from UE
             let key_hash = if dict.revision == 6 {
-                revision6_hash(password, key_salt, &[])
+                revision6_hash(password, key_salt, &[])?
             } else {
                 sha256::digest(&[password, key_salt].concat())
             };
@@ -412,19 +420,19 @@ fn aes256_check_password(password: &[u8], dict: &EncryptDict) -> Option<Vec<u8>>
     }
 
     // Try owner password
-    if dict.owner_hash.len() >= 48 {
+    if dict.owner_hash.len() >= 48 && dict.user_hash.len() >= 48 {
         let validation_salt = &dict.owner_hash[32..40];
         let key_salt = &dict.owner_hash[40..48];
 
         let hash = if dict.revision == 6 {
-            revision6_hash(password, validation_salt, &dict.user_hash[..48])
+            revision6_hash(password, validation_salt, &dict.user_hash[..48])?
         } else {
             sha256::digest(&[password, validation_salt, &dict.user_hash[..48]].concat())
         };
 
         if hash[..] == dict.owner_hash[..32] {
             let key_hash = if dict.revision == 6 {
-                revision6_hash(password, key_salt, &dict.user_hash[..48])
+                revision6_hash(password, key_salt, &dict.user_hash[..48])?
             } else {
                 sha256::digest(&[password, key_salt, &dict.user_hash[..48]].concat())
             };
@@ -444,7 +452,7 @@ fn aes256_check_password(password: &[u8], dict: &EncryptDict) -> Option<Vec<u8>>
 ///
 /// Uses SHA-256/384/512 adaptively with AES-128-CBC encryption rounds.
 /// Ported from PDFium `Revision6_Hash()`.
-fn revision6_hash(password: &[u8], salt: &[u8], vector: &[u8]) -> [u8; 32] {
+fn revision6_hash(password: &[u8], salt: &[u8], vector: &[u8]) -> Option<[u8; 32]> {
     use crate::fdrm::{sha384, sha512};
 
     // Initial SHA-256 hash
@@ -475,8 +483,7 @@ fn revision6_hash(password: &[u8], salt: &[u8], vector: &[u8]) -> [u8; 32] {
         // AES-128-CBC encrypt with key = first 16 bytes, iv = next 16 bytes
         let aes_key = &hash_result[..16];
         let aes_iv = &hash_result[16..32];
-        let encrypted = aes::encrypt_aes128_cbc(aes_key, aes_iv, &content)
-            .expect("AES-128-CBC encryption in revision6_hash must not fail");
+        let encrypted = aes::encrypt_aes128_cbc(aes_key, aes_iv, &content).ok()?;
 
         // Select hash based on first 16 bytes interpreted as big-endian mod 3
         let selector = big_order_mod3(&encrypted);
@@ -507,7 +514,7 @@ fn revision6_hash(password: &[u8], salt: &[u8], vector: &[u8]) -> [u8; 32] {
 
     let mut out = [0u8; 32];
     out.copy_from_slice(&hash_result[..32]);
-    out
+    Some(out)
 }
 
 /// Compute `first 16 bytes as big-endian 128-bit integer mod 3`.
@@ -667,6 +674,21 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn calc_encrypt_key_oversized_key_length_is_clamped() {
+        // key_length > 16 should be clamped to 16 (MD5 output size)
+        let o = [0xAAu8; 32];
+        let p: i32 = -4;
+        let file_id = b"0123456789abcdef";
+
+        // key_length=32 would panic without clamping; with clamp it should
+        // produce the same result as key_length=16
+        let result_clamped = calc_encrypt_key(b"", &o, p, file_id, 32, 2, true);
+        let result_16 = calc_encrypt_key(b"", &o, p, file_id, 16, 2, true);
+        assert_eq!(result_clamped, result_16);
+        assert_eq!(result_clamped.len(), 16);
+    }
+
+    #[test]
     fn calc_encrypt_key_r3_encrypt_metadata_false() {
         // When EncryptMetadata=false, append 0xFFFFFFFF to MD5 input
         let o = [0xCCu8; 32];
@@ -802,6 +824,29 @@ pub(crate) mod tests {
         let result = check_user_password(b"", &dict, file_id);
         assert!(result.is_some(), "empty password should be accepted");
         assert_eq!(result.unwrap(), expected_key);
+    }
+
+    #[test]
+    fn check_user_password_short_user_hash_returns_none() {
+        let file_id = b"0123456789abcdef";
+        let o = [0xAAu8; 32];
+        let p: i32 = -4;
+        // Build a dict with user_hash shorter than 16 bytes
+        let dict = EncryptDict {
+            revision: 3,
+            key_length: 16,
+            cipher: Cipher::Rc4,
+            permissions: p,
+            owner_hash: o.to_vec(),
+            user_hash: vec![0u8; 10], // too short
+            owner_encrypted_key: None,
+            user_encrypted_key: None,
+            encrypted_perms: None,
+            encrypt_metadata: true,
+        };
+
+        let result = check_user_password(b"", &dict, file_id);
+        assert!(result.is_none(), "short user_hash should return None");
     }
 
     // ---------------------------------------------------------------
@@ -1102,6 +1147,49 @@ pub(crate) mod tests {
 
         let result = aes256_check_password(password, &dict);
         assert!(result.is_some(), "R5 password check should pass");
+        assert_eq!(result.unwrap(), expected_key);
+    }
+
+    #[test]
+    fn aes256_check_password_r6_user() {
+        // R6: revision6_hash(password, validation_salt, []) must match U[0..32]
+        let password = b"secret";
+        let validation_salt = [0x11u8; 8]; // U[32..40]
+        let key_salt = [0x22u8; 8]; // U[40..48]
+
+        // Compute U hash using revision6_hash (the R6 code path)
+        let u_hash =
+            revision6_hash(password, &validation_salt, &[]).expect("revision6_hash should succeed");
+
+        // U = hash(32) + validation_salt(8) + key_salt(8)
+        let mut user_hash = Vec::new();
+        user_hash.extend_from_slice(&u_hash);
+        user_hash.extend_from_slice(&validation_salt);
+        user_hash.extend_from_slice(&key_salt);
+
+        // UE: derive key_for_ue via revision6_hash, then compute expected decrypted key
+        let key_for_ue =
+            revision6_hash(password, &key_salt, &[]).expect("revision6_hash should succeed");
+        let user_encrypted_key = vec![0xFFu8; 32];
+        let expected_key =
+            crate::fdrm::aes::decrypt_aes256_cbc(&key_for_ue, &[0u8; 16], &user_encrypted_key)
+                .unwrap();
+
+        let dict = EncryptDict {
+            revision: 6,
+            key_length: 32,
+            cipher: Cipher::Aes256,
+            permissions: -4,
+            owner_hash: vec![0u8; 48],
+            user_hash,
+            owner_encrypted_key: Some(vec![0u8; 32]),
+            user_encrypted_key: Some(user_encrypted_key),
+            encrypted_perms: Some(vec![0u8; 16]),
+            encrypt_metadata: true,
+        };
+
+        let result = aes256_check_password(password, &dict);
+        assert!(result.is_some(), "R6 password check should pass");
         assert_eq!(result.unwrap(), expected_key);
     }
 }
