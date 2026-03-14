@@ -13,8 +13,8 @@ pub struct CharEntry {
 
 /// A text object extracted from a content stream (`BT` … `ET` block).
 pub struct TextObject {
-    /// All character entries in rendering order.
-    pub char_codes: Vec<CharEntry>,
+    /// Character entries in rendering order (each entry is a full glyph record).
+    pub char_entries: Vec<CharEntry>,
     /// The font active when this object was rendered.
     pub font: PdfFont,
     /// Font size in text-space units (from `Tf` operator).
@@ -56,7 +56,7 @@ mod tests {
     #[test]
     fn text_object_fields_accessible() {
         let obj = TextObject {
-            char_codes: vec![CharEntry {
+            char_entries: vec![CharEntry {
                 code: 72,
                 origin: Point::new(0.0, 0.0),
                 width: 750.0,
@@ -68,7 +68,7 @@ mod tests {
             text_matrix: Matrix::default(),
             ctm: Matrix::default(),
         };
-        assert_eq!(obj.char_codes.len(), 1);
+        assert_eq!(obj.char_entries.len(), 1);
         assert!((obj.font_size - 12.0).abs() < 1e-9);
         assert!(obj.text_matrix.is_identity());
     }
@@ -76,7 +76,7 @@ mod tests {
     #[test]
     fn page_object_text_variant() {
         let obj = PageObject::Text(Box::new(TextObject {
-            char_codes: vec![],
+            char_entries: vec![],
             font: PdfFont::Unsupported {
                 base_font: "Times-Roman".to_string(),
             },
