@@ -233,7 +233,7 @@ mod tests {
         pdf
     }
 
-    /// PDF with a single bookmark "Chapter 1" pointing to GoTo action.
+    /// PDF with a single bookmark "Chapter 1" with no action or destination.
     fn pdf_with_single_bookmark() -> Vec<u8> {
         let mut pdf = Vec::new();
         pdf.extend_from_slice(b"%PDF-1.4\n");
