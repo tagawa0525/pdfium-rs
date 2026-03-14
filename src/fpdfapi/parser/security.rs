@@ -475,7 +475,8 @@ fn revision6_hash(password: &[u8], salt: &[u8], vector: &[u8]) -> [u8; 32] {
         // AES-128-CBC encrypt with key = first 16 bytes, iv = next 16 bytes
         let aes_key = &hash_result[..16];
         let aes_iv = &hash_result[16..32];
-        let encrypted = aes::encrypt_aes128_cbc(aes_key, aes_iv, &content).unwrap_or(content);
+        let encrypted = aes::encrypt_aes128_cbc(aes_key, aes_iv, &content)
+            .expect("AES-128-CBC encryption in revision6_hash must not fail");
 
         // Select hash based on first 16 bytes interpreted as big-endian mod 3
         let selector = big_order_mod3(&encrypted);
