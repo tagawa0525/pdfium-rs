@@ -22,17 +22,13 @@ const AGE_LATIN1: &[u8] = b"\xe2ge";
 const HOTEL_UTF8: &[u8] = b"h\xc3\xb4tel";
 const HOTEL_LATIN1: &[u8] = b"h\xf4tel";
 
-// --- Unencrypted ---
+// --- Encrypted PDF opened without password is rejected ---
 
-/// Ported from: Unencrypted
-/// Opening a non-encrypted PDF should succeed without a password.
+/// Ported from: Unencrypted (adapted)
+/// Verify that Document::open rejects encrypted PDFs when called without a password.
 #[test]
-fn unencrypted_open_succeeds() {
-    // We use our minimal PDF (generated in-memory) for this test,
-    // but we test the file-based path via from_reader_with_password.
+fn encrypted_open_without_password_fails() {
     let pdf = fixture("encrypted_hello_world_r2.pdf");
-    // An unencrypted PDF would work with from_reader. Here we just verify
-    // that encrypted PDFs are correctly rejected by from_reader.
     let result = Document::open(pdf);
     assert!(
         result.is_err(),
