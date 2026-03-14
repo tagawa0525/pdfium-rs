@@ -252,16 +252,71 @@ fn render_to_png_has_valid_signature() {
 }
 
 // ─── hello_world.pdf (text-only) ────────────────────────────────────────────
+//
+// Content stream contains two text blocks:
+//   - "Hello, world!" at PDF (10, 120) with Times-Roman 12pt
+//   - "Goodbye, world!" at PDF (10, 150) with Helvetica 18pt
+//
+// Both fonts are non-embedded standard 14 fonts, rendered via Liberation fallback.
 
-/// hello_world.pdf contains only text objects (no paths/images).
-/// Rendering should succeed without panic, producing a white bitmap
-/// (since text rendering is deferred to Phase 5).
+/// hello_world.pdf should render with visible text (not all white).
 #[test]
-fn hello_world_renders_without_panic() {
+fn hello_world_renders_text() {
     let bmp = render_fixture("hello_world.pdf", 72.0);
-    // hello_world.pdf: 200×200 pt → 200×200 px at 72 DPI
     assert_eq!(bmp.width, 200);
     assert_eq!(bmp.height, 200);
-    // Should be all white (text objects are skipped in Phase 4)
-    assert_eq!(bmp.pixel_at(100, 100), Some(Color::WHITE));
+    // Text should produce non-white pixels somewhere on the page
+    let has_non_white = (0..bmp.height)
+        .flat_map(|y| (0..bmp.width).map(move |x| (x, y)))
+        .any(|(x, y)| bmp.pixel_at(x, y).is_some_and(|p| p != Color::WHITE));
+    assert!(
+        has_non_white,
+        "hello_world.pdf should have visible text (non-white pixels)"
+    );
+}
+
+/// Background areas (corners) should still be white.
+#[test]
+fn hello_world_background_is_white() {
+    let bmp = render_fixture("hello_world.pdf", 72.0);
+    // Top-left corner should be white (no text there)
+    assert_eq!(bmp.pixel_at(0, 0), Some(Color::WHITE));
+    // Bottom-right corner should be white
+    assert_eq!(bmp.pixel_at(199, 199), Some(Color::WHITE));
+}
+
+/// Text area should contain dark pixels (black text on white background).
+#[test]
+fn hello_world_text_area_has_dark_pixels() {
+    let bmp = render_fixture("hello_world.pdf", 72.0);
+    // "Hello, world!" is at PDF (10, 120) → device y ≈ 80
+    // Scan a band around device y=80, x from 10 to 120 for dark pixels
+    let has_dark = (70..90)
+        .flat_map(|y| (10..120).map(move |x| (x, y)))
+        .any(|(x, y)| {
+            bmp.pixel_at(x, y)
+                .is_some_and(|p| p.r < 100 && p.g < 100 && p.b < 100)
+        });
+    assert!(
+        has_dark,
+        "text area should contain dark pixels (black text)"
+    );
+}
+
+/// DPI scaling should also work for text rendering.
+#[test]
+fn hello_world_dpi_scaling() {
+    let bmp72 = render_fixture("hello_world.pdf", 72.0);
+    let bmp144 = render_fixture("hello_world.pdf", 144.0);
+    assert_eq!(bmp72.width * 2, bmp144.width);
+    assert_eq!(bmp72.height * 2, bmp144.height);
+    // Both should have non-white pixels (text rendered at both DPIs)
+    let has_text_72 = (0..bmp72.height)
+        .flat_map(|y| (0..bmp72.width).map(move |x| (x, y)))
+        .any(|(x, y)| bmp72.pixel_at(x, y).is_some_and(|p| p != Color::WHITE));
+    let has_text_144 = (0..bmp144.height)
+        .flat_map(|y| (0..bmp144.width).map(move |x| (x, y)))
+        .any(|(x, y)| bmp144.pixel_at(x, y).is_some_and(|p| p != Color::WHITE));
+    assert!(has_text_72, "72 DPI should have text");
+    assert!(has_text_144, "144 DPI should have text");
 }

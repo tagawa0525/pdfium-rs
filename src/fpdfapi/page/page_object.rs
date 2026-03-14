@@ -26,6 +26,24 @@ pub struct TextObject {
     pub text_matrix: Matrix,
     /// Current transformation matrix at the start of this text object.
     pub ctm: Matrix,
+    /// Fill color for text rendering (from graphics state).
+    pub fill_color: Color,
+    /// Stroke color for text rendering (from graphics state).
+    pub stroke_color: Color,
+    /// Text rendering mode (Tr operator).
+    ///
+    /// Values 0–7 per PDF spec §9.3.6:
+    /// - 0: fill only
+    /// - 1: stroke only
+    /// - 2: fill + stroke
+    /// - 3: invisible
+    /// - 4: fill + clip (clip deferred)
+    /// - 5: stroke + clip (clip deferred)
+    /// - 6: fill + stroke + clip (clip deferred)
+    /// - 7: invisible + clip (clip deferred)
+    pub text_rendering_mode: u8,
+    /// Line width for stroked text (from `w` operator in graphics state).
+    pub line_width: f32,
 }
 
 /// Fill rule for path painting operations (PDF spec §8.5.3.3).
@@ -110,6 +128,10 @@ mod tests {
             font_size: 12.0,
             text_matrix: Matrix::default(),
             ctm: Matrix::default(),
+            fill_color: Color::BLACK,
+            stroke_color: Color::BLACK,
+            text_rendering_mode: 0,
+            line_width: 1.0,
         };
         assert_eq!(obj.char_entries.len(), 1);
         assert!((obj.font_size - 12.0).abs() < 1e-9);
@@ -126,6 +148,10 @@ mod tests {
             font_size: 10.0,
             text_matrix: Matrix::default(),
             ctm: Matrix::default(),
+            fill_color: Color::BLACK,
+            stroke_color: Color::BLACK,
+            text_rendering_mode: 0,
+            line_width: 1.0,
         }));
         assert!(matches!(obj, PageObject::Text(_)));
     }
