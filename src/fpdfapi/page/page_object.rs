@@ -129,7 +129,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn path_object_default_fields() {
         let obj = PathObject {
             path: crate::fxge::path::Path::new(),
@@ -151,7 +150,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn image_object_fields() {
         let obj = ImageObject {
             data: vec![255, 0, 0, 255],
@@ -165,7 +163,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn graphics_state_has_color_and_line_style() {
         let gs = crate::fpdfapi::page::graphics_state::GraphicsState::default();
         assert_eq!(gs.line_width, 1.0);
