@@ -312,6 +312,9 @@ fn check_user_password(password: &[u8], dict: &EncryptDict, file_id: &[u8]) -> O
             return Some(key);
         }
     } else {
+        if dict.user_hash.len() < 16 {
+            return None;
+        }
         let computed_u = compute_u_r3(&key, file_id);
         // Only compare first 16 bytes for R3+
         if computed_u[..16] == dict.user_hash[..16] {
@@ -802,6 +805,29 @@ pub(crate) mod tests {
         let result = check_user_password(b"", &dict, file_id);
         assert!(result.is_some(), "empty password should be accepted");
         assert_eq!(result.unwrap(), expected_key);
+    }
+
+    #[test]
+    fn check_user_password_short_user_hash_returns_none() {
+        let file_id = b"0123456789abcdef";
+        let o = [0xAAu8; 32];
+        let p: i32 = -4;
+        // Build a dict with user_hash shorter than 16 bytes
+        let dict = EncryptDict {
+            revision: 3,
+            key_length: 16,
+            cipher: Cipher::Rc4,
+            permissions: p,
+            owner_hash: o.to_vec(),
+            user_hash: vec![0u8; 10], // too short
+            owner_encrypted_key: None,
+            user_encrypted_key: None,
+            encrypted_perms: None,
+            encrypt_metadata: true,
+        };
+
+        let result = check_user_password(b"", &dict, file_id);
+        assert!(result.is_none(), "short user_hash should return None");
     }
 
     // ---------------------------------------------------------------
