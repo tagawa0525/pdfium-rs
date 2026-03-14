@@ -1148,4 +1148,47 @@ pub(crate) mod tests {
         assert!(result.is_some(), "R5 password check should pass");
         assert_eq!(result.unwrap(), expected_key);
     }
+
+    #[test]
+    fn aes256_check_password_r6_user() {
+        // R6: revision6_hash(password, validation_salt, []) must match U[0..32]
+        let password = b"secret";
+        let validation_salt = [0x11u8; 8]; // U[32..40]
+        let key_salt = [0x22u8; 8]; // U[40..48]
+
+        // Compute U hash using revision6_hash (the R6 code path)
+        let u_hash =
+            revision6_hash(password, &validation_salt, &[]).expect("revision6_hash should succeed");
+
+        // U = hash(32) + validation_salt(8) + key_salt(8)
+        let mut user_hash = Vec::new();
+        user_hash.extend_from_slice(&u_hash);
+        user_hash.extend_from_slice(&validation_salt);
+        user_hash.extend_from_slice(&key_salt);
+
+        // UE: derive key_for_ue via revision6_hash, then compute expected decrypted key
+        let key_for_ue =
+            revision6_hash(password, &key_salt, &[]).expect("revision6_hash should succeed");
+        let user_encrypted_key = vec![0xFFu8; 32];
+        let expected_key =
+            crate::fdrm::aes::decrypt_aes256_cbc(&key_for_ue, &[0u8; 16], &user_encrypted_key)
+                .unwrap();
+
+        let dict = EncryptDict {
+            revision: 6,
+            key_length: 32,
+            cipher: Cipher::Aes256,
+            permissions: -4,
+            owner_hash: vec![0u8; 48],
+            user_hash,
+            owner_encrypted_key: Some(vec![0u8; 32]),
+            user_encrypted_key: Some(user_encrypted_key),
+            encrypted_perms: Some(vec![0u8; 16]),
+            encrypt_metadata: true,
+        };
+
+        let result = aes256_check_password(password, &dict);
+        assert!(result.is_some(), "R6 password check should pass");
+        assert_eq!(result.unwrap(), expected_key);
+    }
 }
