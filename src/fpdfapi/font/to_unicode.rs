@@ -181,8 +181,19 @@ fn parse_bfrange(data: &[u8], pos: &mut usize, map: &mut HashMap<u32, String>) {
 }
 
 fn skip_whitespace(data: &[u8], pos: &mut usize) {
-    while *pos < data.len() && data[*pos].is_ascii_whitespace() {
-        *pos += 1;
+    loop {
+        // Skip ASCII whitespace
+        while *pos < data.len() && data[*pos].is_ascii_whitespace() {
+            *pos += 1;
+        }
+        // Skip PostScript/PDF % comments through to end of line
+        if *pos < data.len() && data[*pos] == b'%' {
+            while *pos < data.len() && data[*pos] != b'\n' {
+                *pos += 1;
+            }
+        } else {
+            break;
+        }
     }
 }
 
