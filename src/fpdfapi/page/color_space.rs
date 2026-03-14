@@ -20,7 +20,29 @@ impl ColorSpace {
     ///
     /// Returns `None` if the component count is wrong.
     pub fn to_color(&self, components: &[f32]) -> Option<Color> {
-        todo!()
+        match self {
+            ColorSpace::DeviceGray => {
+                let [g] = components else { return None };
+                let v = (g.clamp(0.0, 1.0) * 255.0).round() as u8;
+                Some(Color::gray(v))
+            }
+            ColorSpace::DeviceRGB => {
+                let [r, g, b] = components else {
+                    return None;
+                };
+                Some(Color::rgb(
+                    (r.clamp(0.0, 1.0) * 255.0).round() as u8,
+                    (g.clamp(0.0, 1.0) * 255.0).round() as u8,
+                    (b.clamp(0.0, 1.0) * 255.0).round() as u8,
+                ))
+            }
+            ColorSpace::DeviceCMYK => {
+                let [c, m, y, k] = components else {
+                    return None;
+                };
+                Some(Color::from_cmyk(*c, *m, *y, *k))
+            }
+        }
     }
 }
 
@@ -34,20 +56,30 @@ pub struct ColorState {
 }
 
 impl Default for ColorState {
+    /// PDF default: DeviceGray with value 0.0 (black) for both fill and stroke.
     fn default() -> Self {
-        todo!()
+        ColorState {
+            fill_color_space: ColorSpace::DeviceGray,
+            fill_components: vec![0.0],
+            stroke_color_space: ColorSpace::DeviceGray,
+            stroke_components: vec![0.0],
+        }
     }
 }
 
 impl ColorState {
     /// Resolve the current fill color.
     pub fn fill_color(&self) -> Color {
-        todo!()
+        self.fill_color_space
+            .to_color(&self.fill_components)
+            .unwrap_or(Color::BLACK)
     }
 
     /// Resolve the current stroke color.
     pub fn stroke_color(&self) -> Color {
-        todo!()
+        self.stroke_color_space
+            .to_color(&self.stroke_components)
+            .unwrap_or(Color::BLACK)
     }
 }
 
@@ -58,21 +90,18 @@ mod tests {
     // --- ColorSpace::to_color ---
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn gray_zero_is_black() {
         let c = ColorSpace::DeviceGray.to_color(&[0.0]).unwrap();
         assert_eq!(c, Color::BLACK);
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn gray_one_is_white() {
         let c = ColorSpace::DeviceGray.to_color(&[1.0]).unwrap();
         assert_eq!(c, Color::WHITE);
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn gray_half() {
         let c = ColorSpace::DeviceGray.to_color(&[0.5]).unwrap();
         assert_eq!(c.r, 128);
@@ -82,21 +111,18 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn rgb_red() {
         let c = ColorSpace::DeviceRGB.to_color(&[1.0, 0.0, 0.0]).unwrap();
         assert_eq!(c, Color::rgb(255, 0, 0));
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn rgb_green() {
         let c = ColorSpace::DeviceRGB.to_color(&[0.0, 1.0, 0.0]).unwrap();
         assert_eq!(c, Color::rgb(0, 255, 0));
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn cmyk_cyan() {
         let c = ColorSpace::DeviceCMYK
             .to_color(&[1.0, 0.0, 0.0, 0.0])
@@ -105,7 +131,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn wrong_component_count_returns_none() {
         assert!(ColorSpace::DeviceGray.to_color(&[]).is_none());
         assert!(ColorSpace::DeviceRGB.to_color(&[1.0]).is_none());
@@ -115,7 +140,6 @@ mod tests {
     // --- ColorState ---
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn color_state_default_is_black() {
         let cs = ColorState::default();
         assert_eq!(cs.fill_color(), Color::BLACK);
