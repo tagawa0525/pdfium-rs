@@ -62,7 +62,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn page_media_box_inherited_from_pages_node() {
         let data = single_page_pdf();
         let mut doc = Document::from_reader(Cursor::new(data)).unwrap();
@@ -74,7 +73,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn page_out_of_bounds_is_error() {
         let data = single_page_pdf();
         let mut doc = Document::from_reader(Cursor::new(data)).unwrap();
@@ -82,7 +80,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn page_empty_content_has_no_objects() {
         let data = single_page_pdf();
         let mut doc = Document::from_reader(Cursor::new(data)).unwrap();
@@ -91,7 +88,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn page_rotation_defaults_to_zero() {
         let data = single_page_pdf();
         let mut doc = Document::from_reader(Cursor::new(data)).unwrap();
