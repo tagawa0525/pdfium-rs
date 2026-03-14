@@ -23,16 +23,27 @@ pub fn decode_image_xobject<R: Read + Seek>(
     ctm: Matrix,
     _doc: &mut Document<R>,
 ) -> Result<ImageObject> {
-    let width = dict
+    let width_i = dict
         .get(b"Width")
         .and_then(|o| o.as_i32())
-        .ok_or_else(|| Error::InvalidPdf("image XObject missing /Width".into()))?
-        as u32;
-    let height = dict
+        .ok_or_else(|| Error::InvalidPdf("image XObject missing /Width".into()))?;
+    if width_i <= 0 {
+        return Err(Error::InvalidPdf(format!(
+            "image XObject: invalid /Width {width_i}"
+        )));
+    }
+    let width = width_i as u32;
+
+    let height_i = dict
         .get(b"Height")
         .and_then(|o| o.as_i32())
-        .ok_or_else(|| Error::InvalidPdf("image XObject missing /Height".into()))?
-        as u32;
+        .ok_or_else(|| Error::InvalidPdf("image XObject missing /Height".into()))?;
+    if height_i <= 0 {
+        return Err(Error::InvalidPdf(format!(
+            "image XObject: invalid /Height {height_i}"
+        )));
+    }
+    let height = height_i as u32;
     let bpc = dict
         .get(b"BitsPerComponent")
         .and_then(|o| o.as_i32())
