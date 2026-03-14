@@ -21,7 +21,9 @@ pub fn parse_encrypt_dict(dict: &PdfDictionary) -> Result<EncryptDict> {
         )));
     }
 
-    let v = dict.get_i32(b"V").unwrap_or(0);
+    let v = dict
+        .get_i32(b"V")
+        .ok_or_else(|| Error::InvalidPdf("/Encrypt missing /V".into()))?;
     let revision = dict
         .get_i32(b"R")
         .ok_or_else(|| Error::InvalidPdf("/Encrypt missing /R".into()))? as u32;
