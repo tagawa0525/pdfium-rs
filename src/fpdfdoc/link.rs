@@ -202,6 +202,19 @@ mod tests {
         assert!(links.is_empty());
     }
 
+    #[test]
+    fn page_links_with_named_dest_via_legacy_dests() {
+        // Link annotation with /Dest (ch1) — resolved via legacy /Dests dict in catalog
+        let pdf = pdf_with_named_dest_link();
+        let mut doc = Document::from_reader(Cursor::new(pdf)).unwrap();
+        let links = doc.page_links(0).unwrap();
+        assert_eq!(links.len(), 1);
+        let link = &links[0];
+        assert!(link.action.is_none());
+        let dest = link.dest.as_ref().unwrap();
+        assert_eq!(dest.zoom_mode, ZoomMode::Fit);
+    }
+
     // --- Helper PDFs ---
 
     fn pdf_with_empty_annots() -> Vec<u8> {
@@ -305,6 +318,37 @@ mod tests {
         pdf.extend_from_slice(format!("{o3:010} 00000 n \n").as_bytes());
         pdf.extend_from_slice(format!("{o4:010} 00000 n \n").as_bytes());
         pdf.extend_from_slice(b"trailer\n<< /Size 5 /Root 1 0 R >>\n");
+        pdf.extend_from_slice(format!("startxref\n{xref}\n%%EOF\n").as_bytes());
+        pdf
+    }
+
+    fn pdf_with_named_dest_link() -> Vec<u8> {
+        // Catalog has legacy /Dests << /ch1 [3 0 R /Fit] >>
+        // Link annotation has /Dest (ch1) — string named dest
+        let mut pdf = Vec::new();
+        pdf.extend_from_slice(b"%PDF-1.4\n");
+        let o1 = pdf.len();
+        pdf.extend_from_slice(b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R /Dests 5 0 R >>\nendobj\n");
+        let o2 = pdf.len();
+        pdf.extend_from_slice(b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
+        let o3 = pdf.len();
+        pdf.extend_from_slice(
+            b"3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Annots [4 0 R] >>\nendobj\n",
+        );
+        let o4 = pdf.len();
+        pdf.extend_from_slice(
+            b"4 0 obj\n<< /Type /Annot /Subtype /Link /Rect [10 20 110 70] /Dest (ch1) >>\nendobj\n",
+        );
+        let o5 = pdf.len();
+        pdf.extend_from_slice(b"5 0 obj\n<< /ch1 [3 0 R /Fit] >>\nendobj\n");
+        let xref = pdf.len();
+        pdf.extend_from_slice(b"xref\n0 6\n0000000000 65535 f \n");
+        pdf.extend_from_slice(format!("{o1:010} 00000 n \n").as_bytes());
+        pdf.extend_from_slice(format!("{o2:010} 00000 n \n").as_bytes());
+        pdf.extend_from_slice(format!("{o3:010} 00000 n \n").as_bytes());
+        pdf.extend_from_slice(format!("{o4:010} 00000 n \n").as_bytes());
+        pdf.extend_from_slice(format!("{o5:010} 00000 n \n").as_bytes());
+        pdf.extend_from_slice(b"trailer\n<< /Size 6 /Root 1 0 R >>\n");
         pdf.extend_from_slice(format!("startxref\n{xref}\n%%EOF\n").as_bytes());
         pdf
     }
