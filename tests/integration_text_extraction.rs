@@ -1,20 +1,23 @@
 //! Integration tests for text extraction and search, ported from
 //! `fpdf_text_embeddertest.cpp` in the C++ PDFium reference.
 //!
-//! These tests use real PDF fixtures from `reference/pdfium/testing/resources/`
-//! to exercise the full pipeline: PDF parse → page tree → content stream →
-//! font decoding → text extraction → text search.
+//! These tests use real PDF fixtures from `tests/fixtures/` to exercise the
+//! full pipeline: PDF parse → page tree → content stream → font decoding →
+//! text extraction → text search.
 
 use std::fs::File;
 use std::io::BufReader;
+use std::path::PathBuf;
 
 use pdfium_rs::fpdftext::TextPage;
 use pdfium_rs::{Document, FindOptions, TextFind};
 
-/// Open a reference PDF by filename.
+/// Open a test PDF fixture by filename.
 fn open_ref_pdf(name: &str) -> Document<BufReader<File>> {
-    let path = format!("reference/pdfium/testing/resources/{name}");
-    Document::open(&path).unwrap_or_else(|e| panic!("failed to open {path}: {e}"))
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures")
+        .join(name);
+    Document::open(&path).unwrap_or_else(|e| panic!("failed to open {}: {e}", path.display()))
 }
 
 // ─── Text extraction (ported from TEST_F(FPDFTextEmbedderTest, Text)) ────────
