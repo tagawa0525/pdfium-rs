@@ -185,7 +185,7 @@ fn skip_whitespace(data: &[u8], pos: &mut usize) {
     }
 }
 
-/// Read a `<hexhex...>` token, returning the raw bytes (not hex-decoded).
+/// Read a `<hexhex...>` token, hex-decoding the contents and returning the decoded bytes.
 fn read_hex_token(data: &[u8], pos: &mut usize) -> Option<Vec<u8>> {
     if *pos >= data.len() || data[*pos] != b'<' {
         return None;
