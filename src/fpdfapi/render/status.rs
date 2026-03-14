@@ -6,6 +6,7 @@ use crate::fxge::dib::Bitmap;
 use super::context::page_to_device_matrix;
 use super::image_renderer::render_image;
 use super::path_renderer::render_path;
+use super::text_renderer::render_text;
 
 /// Maximum output dimension in pixels (16384 × 16384 prevents OOM).
 const MAX_DIMENSION: u32 = 16_384;
@@ -53,8 +54,11 @@ pub fn render(page: &Page, dpi: f32) -> Result<Bitmap> {
             PageObject::Image(image_obj) => {
                 render_image(&mut pixmap, image_obj, page_to_device);
             }
-            PageObject::Text(_) | PageObject::Form => {
-                // Text rendering is Phase 5; Form XObjects are stubs.
+            PageObject::Text(text_obj) => {
+                render_text(&mut pixmap, text_obj, page_to_device);
+            }
+            PageObject::Form => {
+                // Form XObjects are stubs.
             }
         }
     }
