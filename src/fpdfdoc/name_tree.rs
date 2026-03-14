@@ -96,7 +96,7 @@ fn lookup_in_dict<R: Read + Seek>(
     name: &[u8],
     depth: usize,
 ) -> Result<Option<PdfObject>> {
-    if depth > MAX_DEPTH {
+    if depth >= MAX_DEPTH {
         return Ok(None);
     }
 
