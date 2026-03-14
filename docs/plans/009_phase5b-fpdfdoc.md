@@ -372,7 +372,7 @@ cargo test integration_fpdfdoc
 
 | Step | 内容                          | 状態 |
 | ---- | ----------------------------- | ---- |
-| 1    | Dest 型 + モジュール scaffold | todo |
+| 1    | Dest 型 + モジュール scaffold | done |
 | 2    | Action 型                     | todo |
 | 3    | Bookmark ツリー               | todo |
 | 4    | Annotation + page_dict        | todo |
