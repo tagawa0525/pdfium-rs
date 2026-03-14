@@ -1,3 +1,4 @@
+use crate::fpdftext::text_page::TextPage;
 use crate::fxcrt::coordinates::Rect;
 
 use super::page_object::PageObject;
@@ -13,6 +14,16 @@ pub struct Page {
     pub rotation: u16,
     /// Parsed content objects in rendering order.
     pub objects: Vec<PageObject>,
+}
+
+impl Page {
+    /// Extract all text from this page in reading order.
+    ///
+    /// Builds a [`TextPage`] and returns its text. Synthetic spaces and
+    /// newlines are inserted based on glyph positions.
+    pub fn extract_text(&self) -> String {
+        TextPage::build(self).text().to_string()
+    }
 }
 
 #[cfg(test)]
