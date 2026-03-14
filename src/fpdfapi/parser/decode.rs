@@ -4,11 +4,11 @@ use crate::fxcodec::{ascii_hex, ascii85, flate, lzw};
 
 /// Maximum size of a decoded stream. Protects against OOM from malicious or
 /// corrupt PDFs with degenerate compression ratios.
-/// Wasm environments use a smaller limit (64 MiB) because browser memory is
-/// more constrained; native targets use 256 MiB.
-#[cfg(target_arch = "wasm32")]
+/// `wasm32-unknown-unknown` (browser) uses 64 MiB because browser memory is
+/// more constrained; all other targets use 256 MiB.
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
 const MAX_DECODED_SIZE: usize = 64 * 1024 * 1024;
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 const MAX_DECODED_SIZE: usize = 256 * 1024 * 1024;
 
 /// Decode a raw stream by applying its filter pipeline.
