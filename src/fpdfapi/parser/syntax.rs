@@ -506,33 +506,39 @@ impl<R: Read + Seek> SyntaxParser<R> {
                 _ => {}
             }
 
-            // Read stream data based on /Length.
-            // /Length must be a direct integer; indirect references are not
-            // supported at this stage (would require two-pass parsing).
-            let length = dict
-                .get_i32(b"Length")
-                .ok_or_else(|| Error::InvalidPdf("stream missing integer /Length".into()))?
-                as usize;
-            let mut data = vec![0u8; length];
-            self.reader.read_exact(&mut data)?;
+            // Read stream data.
+            //
+            // Prefer /Length when it is a direct integer. When /Length is an
+            // indirect reference (e.g. `/Length 42 0 R`), it cannot be resolved
+            // here because the object store may not yet have parsed that object.
+            // In that case, fall back to scanning for the `endstream` keyword.
+            let data = if let Some(length) = dict.get_i32(b"Length") {
+                let length = length.max(0) as usize;
+                let mut buf = vec![0u8; length];
+                self.reader.read_exact(&mut buf)?;
 
-            // Consume optional EOL then the required "endstream" keyword.
-            match self.peek_byte()? {
-                Some(b'\r') => {
-                    self.read_byte()?;
-                    if self.peek_byte()? == Some(b'\n') {
+                // Consume optional EOL then the required "endstream" keyword.
+                match self.peek_byte()? {
+                    Some(b'\r') => {
+                        self.read_byte()?;
+                        if self.peek_byte()? == Some(b'\n') {
+                            self.read_byte()?;
+                        }
+                    }
+                    Some(b'\n') => {
                         self.read_byte()?;
                     }
+                    _ => {}
                 }
-                Some(b'\n') => {
-                    self.read_byte()?;
+                let endstream = self.read_word()?;
+                if endstream != b"endstream" {
+                    return Err(Error::InvalidPdf("expected 'endstream'".into()));
                 }
-                _ => {}
-            }
-            let endstream = self.read_word()?;
-            if endstream != b"endstream" {
-                return Err(Error::InvalidPdf("expected 'endstream'".into()));
-            }
+                buf
+            } else {
+                // /Length is missing or indirect — scan for "endstream".
+                self.read_stream_until_endstream()?
+            };
 
             return Ok(PdfObject::Stream(PdfStream { dict, data }));
         }
@@ -540,6 +546,39 @@ impl<R: Read + Seek> SyntaxParser<R> {
         // Not a stream, restore position
         self.seek(saved_pos)?;
         Ok(PdfObject::Dictionary(dict))
+    }
+
+    /// Read stream data by scanning for the `endstream` keyword.
+    ///
+    /// Used when `/Length` is an indirect reference that cannot be resolved
+    /// during syntax parsing. Reads bytes until `\nendstream` or
+    /// `\r\nendstream` is found, then strips the trailing EOL from the data.
+    fn read_stream_until_endstream(&mut self) -> Result<Vec<u8>> {
+        const MARKER: &[u8] = b"endstream";
+        let mut buf = Vec::new();
+
+        loop {
+            match self.read_byte()? {
+                Some(b) => buf.push(b),
+                None => return Err(Error::InvalidPdf("unexpected EOF in stream".into())),
+            }
+            if buf.len() >= MARKER.len() && buf[buf.len() - MARKER.len()..] == *MARKER {
+                // Verify the next byte is whitespace/delimiter/EOF to avoid
+                // matching "endstreamXYZ" inside binary data.
+                let next = self.peek_byte()?;
+                if next.is_none() || next.is_some_and(|c| is_whitespace(c) || is_delimiter(c)) {
+                    // Remove the "endstream" marker from the data.
+                    buf.truncate(buf.len() - MARKER.len());
+                    // Strip trailing EOL from data.
+                    if buf.ends_with(b"\r\n") {
+                        buf.truncate(buf.len() - 2);
+                    } else if buf.ends_with(b"\r") || buf.ends_with(b"\n") {
+                        buf.truncate(buf.len() - 1);
+                    }
+                    return Ok(buf);
+                }
+            }
+        }
     }
 }
 
@@ -820,9 +859,11 @@ mod tests {
     }
 
     #[test]
-    fn parse_stream_missing_length_is_error() {
-        let result = parse_err(b"<< >>\nstream\nhello\nendstream");
-        assert!(matches!(result, Error::InvalidPdf(_)));
+    fn parse_stream_missing_length_falls_back_to_endstream_scan() {
+        let input = b"<< >>\nstream\nhello\nendstream";
+        let obj = parse(input);
+        let stream = obj.as_stream().unwrap();
+        assert_eq!(stream.data, b"hello");
     }
 
     // --- Error cases ---

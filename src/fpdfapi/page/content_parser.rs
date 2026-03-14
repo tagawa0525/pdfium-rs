@@ -366,6 +366,22 @@ impl<'a, R: Read + Seek> Parser<'a, R> {
                 if let (Some(Token::Number(size)), Some(Token::Name(name))) =
                     (self.stack.pop(), self.stack.pop())
                 {
+                    // If the font changes mid-BT and we already have chars,
+                    // flush them as a TextObject before switching fonts.
+                    // This matches C++ PDFium's behaviour of creating separate
+                    // page objects per font run.
+                    if self.in_bt && !self.text_chars.is_empty() {
+                        let font = self.bt_font.take().unwrap_or(PdfFont::Unsupported {
+                            base_font: String::new(),
+                        });
+                        self.objects.push(PageObject::Text(Box::new(TextObject {
+                            char_entries: std::mem::take(&mut self.text_chars),
+                            font,
+                            font_size: self.bt_font_size,
+                            text_matrix: self.bt_text_matrix,
+                            ctm: self.bt_ctm,
+                        })));
+                    }
                     self.gs.text_state.font_size = size;
                     if self.in_bt {
                         self.bt_font_size = size;
