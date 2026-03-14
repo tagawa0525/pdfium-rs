@@ -243,7 +243,7 @@ struct Parser<'a, R: Read + Seek> {
     stack: Vec<Token>,
     gs: GraphicsState,
     gs_stack: Vec<GraphicsState>,
-    font_cache: HashMap<String, PdfFont>,
+    font_cache: HashMap<Vec<u8>, PdfFont>,
     resources: PdfDictionary,
     doc: &'a mut Document<R>,
     objects: Vec<PageObject>,
@@ -371,8 +371,7 @@ impl<'a, R: Read + Seek> Parser<'a, R> {
                     if self.in_bt {
                         self.bt_font_size = size;
                     }
-                    let name_str = String::from_utf8_lossy(&name).into_owned();
-                    self.load_font(name_str);
+                    self.load_font(name);
                 }
             }
             b"Tc" => {
@@ -504,8 +503,8 @@ impl<'a, R: Read + Seek> Parser<'a, R> {
         self.stack.clear();
     }
 
-    /// Load a font by resource name into `gs.font` and update `bt_font`.
-    fn load_font(&mut self, name: String) {
+    /// Load a font by resource name (raw bytes) into `gs.font` and update `bt_font`.
+    fn load_font(&mut self, name: Vec<u8>) {
         // Check cache first
         if let Some(cached) = self.font_cache.get(&name) {
             let font = cached.clone();
@@ -516,12 +515,14 @@ impl<'a, R: Read + Seek> Parser<'a, R> {
             return;
         }
 
-        // Lookup font object in resources (clone to release borrow)
+        // Lookup font object in resources (clone to release borrow).
+        // Use raw bytes for the key to avoid UTF-8 conversion that could corrupt
+        // non-ASCII PDF name bytes.
         let font_obj_opt = self
             .resources
             .get(b"Font")
             .and_then(|o| o.as_dict())
-            .and_then(|d| d.get(name.as_bytes()))
+            .and_then(|d| d.get(&name))
             .cloned();
 
         let Some(font_obj) = font_obj_opt else {
