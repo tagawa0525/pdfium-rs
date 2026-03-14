@@ -112,6 +112,11 @@ fn lookup_in_dict<R: Read + Seek>(
 
     // Intermediate node: recurse into /Kids
     if let Some(kids) = dict.get_array(b"Kids") {
+        // NOTE: PDF name trees include /Limits on each node to enable O(log n)
+        // subtree pruning. Currently we do a linear scan of all kids, which is
+        // correct but suboptimal for large trees. A future optimisation could
+        // compare `name` against each kid's /Limits [first last] and skip
+        // subtrees whose range does not include the target.
         let kid_refs: Vec<u32> = kids
             .iter()
             .filter_map(|o| o.as_reference().map(|id| id.num))
