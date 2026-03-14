@@ -285,6 +285,15 @@ impl<R: Read + Seek> Document<R> {
         }
     }
 
+    /// Get a page by zero-based index.
+    ///
+    /// Traverses the page tree, collecting inherited attributes
+    /// (MediaBox, CropBox, Rotation, Resources), decodes the content stream(s),
+    /// and returns a fully parsed [`Page`].
+    pub fn page(&mut self, _n: u32) -> Result<crate::fpdfapi::page::page::Page> {
+        todo!("Document::page — implement page tree traversal in GREEN commit")
+    }
+
     /// Get the root (catalog) dictionary.
     pub fn catalog(&mut self) -> Result<&PdfDictionary> {
         let root_ref = self
