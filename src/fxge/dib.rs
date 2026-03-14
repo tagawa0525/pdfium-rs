@@ -14,8 +14,15 @@ pub struct Bitmap {
 
 impl Bitmap {
     /// Create a new bitmap filled with transparent black.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `width * height * 4` overflows `usize`.
     pub fn new(width: u32, height: u32) -> Self {
-        let size = (width as usize) * (height as usize) * 4;
+        let size = (width as usize)
+            .checked_mul(height as usize)
+            .and_then(|n| n.checked_mul(4))
+            .expect("bitmap dimensions overflow usize");
         Bitmap {
             width,
             height,
