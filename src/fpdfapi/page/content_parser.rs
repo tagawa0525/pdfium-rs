@@ -609,12 +609,23 @@ impl<'a, R: Read + Seek> Parser<'a, R> {
                 break;
             }
         }
-        // Scan for EI keyword
+        // Skip the single whitespace byte that separates ID from image data (PDF spec).
+        if self.pos < self.data.len() && is_whitespace(self.data[self.pos]) {
+            self.pos += 1;
+        }
+        // Scan for whitespace + EI + (whitespace | delimiter | EOF).
+        // Requiring whitespace before EI reduces false positives in binary image data.
         while self.pos < self.data.len() {
-            if self.data[self.pos..].starts_with(b"EI") {
-                // Verify EI is followed by whitespace or end
-                let after = self.pos + 2;
-                if after >= self.data.len() || is_whitespace(self.data[after]) {
+            if is_whitespace(self.data[self.pos])
+                && self.pos + 2 < self.data.len()
+                && self.data[self.pos + 1] == b'E'
+                && self.data[self.pos + 2] == b'I'
+            {
+                let after = self.pos + 3;
+                if after >= self.data.len()
+                    || is_whitespace(self.data[after])
+                    || is_delimiter(self.data[after])
+                {
                     self.pos = after;
                     break;
                 }
