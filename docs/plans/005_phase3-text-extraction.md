@@ -281,7 +281,7 @@ pub struct CharInfo {
 
 **TextFind** (`text_find.rs`):
 
-- `TextMatch { start: usize, end: usize }` — TextPage.textのインデックス
+- `TextMatch { start: usize, end: usize }` — `TextPage::chars` の文字インデックス（バイトオフセットではない）
 - `FindOptions { case_sensitive: bool, whole_word: bool }`
 - `TextFind::find_all(text_page, query, options) -> Vec<TextMatch>`
 - 大文字小文字無視: ASCII toLower 比較（Phase 3スコープ）
