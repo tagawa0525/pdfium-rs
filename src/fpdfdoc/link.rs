@@ -51,7 +51,15 @@ impl<R: Read + Seek> LinksExt for Document<R> {
 
         let mut result = Vec::new();
         for ref_num in annot_refs {
-            let dict = self.object(ref_num)?.as_dict().cloned().unwrap_or_default();
+            let dict = self
+                .object(ref_num)?
+                .as_dict()
+                .ok_or_else(|| {
+                    crate::error::Error::InvalidPdf(format!(
+                        "annotation object {ref_num} is not a dictionary"
+                    ))
+                })?
+                .clone();
 
             if dict.get_name(b"Subtype").map(|n| n.as_bytes()) != Some(b"Link") {
                 continue;
