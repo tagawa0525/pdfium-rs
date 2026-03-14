@@ -443,8 +443,24 @@ impl<R: Read + Seek> Document<R> {
             None => return Ok(Vec::new()),
         };
 
+        // A /Contents reference may point to a single stream *or* to an array of
+        // stream references (valid per PDF spec §7.7.3.3). Resolve first, then dispatch.
         let stream_ids: Vec<u32> = match contents_obj {
-            PdfObject::Reference(id) => vec![id.num],
+            PdfObject::Reference(id) => {
+                let resolved = self.object(id.num)?.clone();
+                match resolved {
+                    PdfObject::Stream(_) => vec![id.num],
+                    PdfObject::Array(arr) => arr
+                        .iter()
+                        .filter_map(|o| o.as_reference().map(|r| r.num))
+                        .collect(),
+                    _ => {
+                        return Err(Error::InvalidPdf(
+                            "/Contents reference is not a stream or array".into(),
+                        ));
+                    }
+                }
+            }
             PdfObject::Array(arr) => arr
                 .iter()
                 .filter_map(|o| o.as_reference().map(|id| id.num))
