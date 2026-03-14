@@ -27,12 +27,24 @@ pub struct CustomEncoding {
 ///
 /// Returns `None` if the code is not mapped (undefined slot).
 pub fn unicode_from_predefined(enc: PredefinedEncoding, code: u8) -> Option<char> {
-    todo!()
+    let table: &[u32; 256] = match enc {
+        PredefinedEncoding::WinAnsi => &WIN_ANSI,
+        PredefinedEncoding::MacRoman => &MAC_ROMAN,
+        PredefinedEncoding::Standard => &STANDARD,
+        // Remaining encodings are not yet implemented; treat as unmapped.
+        _ => return None,
+    };
+    let cp = table[code as usize];
+    if cp == 0 { None } else { char::from_u32(cp) }
 }
 
 /// Map a single byte character code using a custom encoding (base + differences).
 pub fn unicode_from_custom(enc: &CustomEncoding, code: u8) -> Option<char> {
-    todo!()
+    // Check overrides first
+    if let Some(&(_, ch)) = enc.overrides.iter().find(|&&(c, _)| c == code) {
+        return Some(ch);
+    }
+    unicode_from_predefined(enc.base, code)
 }
 
 // ---------------------------------------------------------------------------
@@ -364,7 +376,6 @@ mod tests {
     // --- unicode_from_predefined ---
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn winansi_ascii_printable_maps_to_itself() {
         // ASCII printable range 0x20–0x7E must map to themselves in WinAnsi
         for code in 0x20u8..=0x7E {
@@ -378,14 +389,12 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn winansi_euro_sign_at_0x80() {
         let ch = unicode_from_predefined(PredefinedEncoding::WinAnsi, 0x80);
         assert_eq!(ch, Some('€'));
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn winansi_latin1_supplement_at_0xa0() {
         // 0xA0 = NO-BREAK SPACE in both WinAnsi and Latin-1
         let ch = unicode_from_predefined(PredefinedEncoding::WinAnsi, 0xA0);
@@ -393,7 +402,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn winansi_undefined_slot_returns_none() {
         // 0x81 is undefined in WinAnsi / cp1252
         let ch = unicode_from_predefined(PredefinedEncoding::WinAnsi, 0x81);
@@ -401,7 +409,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn standard_quoteright_at_0x27() {
         // StandardEncoding maps 0x27 to RIGHT SINGLE QUOTATION MARK (U+2019)
         // not ASCII apostrophe
@@ -410,7 +417,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn standard_digits_map_to_themselves() {
         for code in 0x30u8..=0x39 {
             let ch = unicode_from_predefined(PredefinedEncoding::Standard, code);
@@ -419,7 +425,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn standard_undefined_slot_returns_none() {
         // 0x80 is undefined in StandardEncoding
         let ch = unicode_from_predefined(PredefinedEncoding::Standard, 0x80);
@@ -427,7 +432,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn macroman_a_umlaut_at_0x80() {
         let ch = unicode_from_predefined(PredefinedEncoding::MacRoman, 0x80);
         assert_eq!(ch, Some('Ä'));
@@ -436,7 +440,6 @@ mod tests {
     // --- unicode_from_custom ---
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn custom_encoding_override_replaces_base() {
         let enc = CustomEncoding {
             base: PredefinedEncoding::WinAnsi,
@@ -446,7 +449,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn custom_encoding_falls_back_to_base() {
         let enc = CustomEncoding {
             base: PredefinedEncoding::WinAnsi,
@@ -457,7 +459,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn custom_encoding_undefined_base_slot_returns_none() {
         let enc = CustomEncoding {
             base: PredefinedEncoding::WinAnsi,
