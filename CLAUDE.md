@@ -85,6 +85,7 @@ Phase 3以降: 必要に応じて`thiserror`構造化enumに移行。core → `E
 - コミット: Conventional Commits、scopeにモジュール名
 - マージコミット: `## Why` / `## What` / `## Impact` セクション
 - 計画書 (`docs/plans/`) を実装着手前にコミットすること
+- 各フェーズ完了後、C++版の `*_embeddertest.cpp` から統合テストを移植すること（`tests/fixtures/` に実PDFを配置）
 
 ## 外部依存方針
 
