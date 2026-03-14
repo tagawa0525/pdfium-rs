@@ -66,6 +66,7 @@ impl Bitmap {
     /// Encode the bitmap as a PNG and return the bytes.
     pub fn encode_png(&self) -> Result<Vec<u8>, Error> {
         use png::{BitDepth, ColorType, Encoder};
+        use std::io;
 
         let mut buf = Vec::new();
         {
@@ -74,10 +75,10 @@ impl Bitmap {
             encoder.set_depth(BitDepth::Eight);
             let mut writer = encoder
                 .write_header()
-                .map_err(|e| Error::InvalidPdf(e.to_string()))?;
+                .map_err(|e| Error::Io(io::Error::other(e.to_string())))?;
             writer
                 .write_image_data(&self.data)
-                .map_err(|e| Error::InvalidPdf(e.to_string()))?;
+                .map_err(|e| Error::Io(io::Error::other(e.to_string())))?;
         }
         Ok(buf)
     }
