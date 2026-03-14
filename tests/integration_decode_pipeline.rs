@@ -10,7 +10,6 @@ use pdfium_rs::Document;
 /// Ported from: ValidateDecoderPipeline (subset)
 /// Verify that single-filter decode works end-to-end via Document.
 #[test]
-#[ignore = "not yet implemented"]
 fn decode_flate_via_document() {
     use std::io::Write;
     let original = b"Hello from PDFium integration test!";
@@ -32,7 +31,6 @@ fn decode_flate_via_document() {
 /// Ported from: ValidateDecoderPipeline (chained filters)
 /// ASCII85 → Flate chain through Document.
 #[test]
-#[ignore = "not yet implemented"]
 fn decode_chained_ascii85_flate_via_document() {
     use std::io::Write;
     let original = b"chained filter test from PDFium";
@@ -54,7 +52,6 @@ fn decode_chained_ascii85_flate_via_document() {
 /// Ported from: A85Decode test vectors
 /// "FCfN8~>" → "test"
 #[test]
-#[ignore = "not yet implemented"]
 fn decode_ascii85_stream_via_document() {
     let encoded = b"FCfN8~>";
     let pdf = build_pdf_with_stream(b"ASCII85Decode", encoded);
@@ -69,7 +66,6 @@ fn decode_ascii85_stream_via_document() {
 /// Ported from: HexDecode test vectors
 /// "48656C6C6F>" → "Hello"
 #[test]
-#[ignore = "not yet implemented"]
 fn decode_hex_stream_via_document() {
     let encoded = b"48656C6C6F>";
     let pdf = build_pdf_with_stream(b"ASCIIHexDecode", encoded);
@@ -84,7 +80,6 @@ fn decode_hex_stream_via_document() {
 /// Ported from: HexDecode - whitespace handling
 /// "12 Ac\t02\r\nBF>" → [0x12, 0xAC, 0x02, 0xBF]
 #[test]
-#[ignore = "not yet implemented"]
 fn decode_hex_stream_with_whitespace() {
     let encoded = b"12 Ac\t02\r\nBF>";
     let pdf = build_pdf_with_stream(b"ASCIIHexDecode", encoded);
@@ -98,7 +93,6 @@ fn decode_hex_stream_with_whitespace() {
 
 /// No filter — raw data passthrough.
 #[test]
-#[ignore = "not yet implemented"]
 fn decode_no_filter_via_document() {
     let raw = b"raw data no filter";
     let pdf = build_pdf_with_raw_stream(raw);

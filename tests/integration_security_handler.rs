@@ -27,7 +27,6 @@ const HOTEL_LATIN1: &[u8] = b"h\xf4tel";
 /// Ported from: Unencrypted
 /// Opening a non-encrypted PDF should succeed without a password.
 #[test]
-#[ignore = "not yet implemented"]
 fn unencrypted_open_succeeds() {
     // We use our minimal PDF (generated in-memory) for this test,
     // but we test the file-based path via from_reader_with_password.
@@ -45,7 +44,6 @@ fn unencrypted_open_succeeds() {
 
 /// Ported from: OwnerPasswordVersion2UTF8
 #[test]
-#[ignore = "not yet implemented"]
 fn r2_owner_password_utf8() {
     let path = fixture("encrypted_hello_world_r2.pdf");
     let doc = Document::open_with_password(&path, AGE_UTF8);
@@ -57,7 +55,6 @@ fn r2_owner_password_utf8() {
 
 /// Ported from: OwnerPasswordVersion2Latin1
 #[test]
-#[ignore = "not yet implemented"]
 fn r2_owner_password_latin1() {
     let path = fixture("encrypted_hello_world_r2.pdf");
     let doc = Document::open_with_password(&path, AGE_LATIN1);
@@ -66,7 +63,6 @@ fn r2_owner_password_latin1() {
 
 /// Ported from: UserPasswordVersion2UTF8
 #[test]
-#[ignore = "not yet implemented"]
 fn r2_user_password_utf8() {
     let path = fixture("encrypted_hello_world_r2.pdf");
     let doc = Document::open_with_password(&path, HOTEL_UTF8);
@@ -75,7 +71,6 @@ fn r2_user_password_utf8() {
 
 /// Ported from: UserPasswordVersion2Latin1
 #[test]
-#[ignore = "not yet implemented"]
 fn r2_user_password_latin1() {
     let path = fixture("encrypted_hello_world_r2.pdf");
     let doc = Document::open_with_password(&path, HOTEL_LATIN1);
@@ -84,7 +79,6 @@ fn r2_user_password_latin1() {
 
 /// Ported from: BadOkeyVersion2
 #[test]
-#[ignore = "not yet implemented"]
 fn r2_bad_okey_fails() {
     let path = fixture("encrypted_hello_world_r2_bad_okey.pdf");
     let result = Document::open_with_password(&path, AGE_UTF8);
@@ -95,7 +89,6 @@ fn r2_bad_okey_fails() {
 
 /// Ported from: OwnerPasswordVersion3UTF8
 #[test]
-#[ignore = "not yet implemented"]
 fn r3_owner_password_utf8() {
     let path = fixture("encrypted_hello_world_r3.pdf");
     let doc = Document::open_with_password(&path, AGE_UTF8);
@@ -107,7 +100,6 @@ fn r3_owner_password_utf8() {
 
 /// Ported from: OwnerPasswordVersion3Latin1
 #[test]
-#[ignore = "not yet implemented"]
 fn r3_owner_password_latin1() {
     let path = fixture("encrypted_hello_world_r3.pdf");
     let doc = Document::open_with_password(&path, AGE_LATIN1);
@@ -116,7 +108,6 @@ fn r3_owner_password_latin1() {
 
 /// Ported from: UserPasswordVersion3UTF8
 #[test]
-#[ignore = "not yet implemented"]
 fn r3_user_password_utf8() {
     let path = fixture("encrypted_hello_world_r3.pdf");
     let doc = Document::open_with_password(&path, HOTEL_UTF8);
@@ -125,7 +116,6 @@ fn r3_user_password_utf8() {
 
 /// Ported from: UserPasswordVersion3Latin1
 #[test]
-#[ignore = "not yet implemented"]
 fn r3_user_password_latin1() {
     let path = fixture("encrypted_hello_world_r3.pdf");
     let doc = Document::open_with_password(&path, HOTEL_LATIN1);
@@ -134,7 +124,6 @@ fn r3_user_password_latin1() {
 
 /// Ported from: BadOkeyVersion3
 #[test]
-#[ignore = "not yet implemented"]
 fn r3_bad_okey_fails() {
     let path = fixture("encrypted_hello_world_r3_bad_okey.pdf");
     let result = Document::open_with_password(&path, AGE_UTF8);
@@ -145,7 +134,6 @@ fn r3_bad_okey_fails() {
 
 /// Ported from: OwnerPasswordVersion5
 #[test]
-#[ignore = "not yet implemented"]
 fn r5_owner_password_utf8() {
     let path = fixture("encrypted_hello_world_r5.pdf");
     let doc = Document::open_with_password(&path, AGE_UTF8);
@@ -157,7 +145,6 @@ fn r5_owner_password_utf8() {
 
 /// Ported from: OwnerPasswordVersion5Latin1
 #[test]
-#[ignore = "not yet implemented"]
 fn r5_owner_password_latin1() {
     let path = fixture("encrypted_hello_world_r5.pdf");
     let doc = Document::open_with_password(&path, AGE_LATIN1);
@@ -166,7 +153,6 @@ fn r5_owner_password_latin1() {
 
 /// Ported from: UserPasswordVersion5UTF8
 #[test]
-#[ignore = "not yet implemented"]
 fn r5_user_password_utf8() {
     let path = fixture("encrypted_hello_world_r5.pdf");
     let doc = Document::open_with_password(&path, HOTEL_UTF8);
@@ -175,7 +161,6 @@ fn r5_user_password_utf8() {
 
 /// Ported from: UserPasswordVersion5Latin1
 #[test]
-#[ignore = "not yet implemented"]
 fn r5_user_password_latin1() {
     let path = fixture("encrypted_hello_world_r5.pdf");
     let doc = Document::open_with_password(&path, HOTEL_LATIN1);
@@ -184,7 +169,6 @@ fn r5_user_password_latin1() {
 
 /// Ported from: NoPasswordVersion5
 #[test]
-#[ignore = "not yet implemented"]
 fn r5_no_password_fails() {
     let path = fixture("encrypted_hello_world_r5.pdf");
     let result = Document::open_with_password(&path, b"");
@@ -193,7 +177,6 @@ fn r5_no_password_fails() {
 
 /// Ported from: BadPasswordVersion5
 #[test]
-#[ignore = "not yet implemented"]
 fn r5_bad_password_fails() {
     let path = fixture("encrypted_hello_world_r5.pdf");
     let result = Document::open_with_password(&path, b"tiger");
@@ -204,7 +187,6 @@ fn r5_bad_password_fails() {
 
 /// Ported from: OwnerPasswordVersion6UTF8
 #[test]
-#[ignore = "not yet implemented"]
 fn r6_owner_password_utf8() {
     let path = fixture("encrypted_hello_world_r6.pdf");
     let doc = Document::open_with_password(&path, AGE_UTF8);
@@ -216,7 +198,6 @@ fn r6_owner_password_utf8() {
 
 /// Ported from: OwnerPasswordVersion6Latin1
 #[test]
-#[ignore = "not yet implemented"]
 fn r6_owner_password_latin1() {
     let path = fixture("encrypted_hello_world_r6.pdf");
     let doc = Document::open_with_password(&path, AGE_LATIN1);
@@ -225,7 +206,6 @@ fn r6_owner_password_latin1() {
 
 /// Ported from: UserPasswordVersion6UTF8
 #[test]
-#[ignore = "not yet implemented"]
 fn r6_user_password_utf8() {
     let path = fixture("encrypted_hello_world_r6.pdf");
     let doc = Document::open_with_password(&path, HOTEL_UTF8);
@@ -234,7 +214,6 @@ fn r6_user_password_utf8() {
 
 /// Ported from: UserPasswordVersion6Latin1
 #[test]
-#[ignore = "not yet implemented"]
 fn r6_user_password_latin1() {
     let path = fixture("encrypted_hello_world_r6.pdf");
     let doc = Document::open_with_password(&path, HOTEL_LATIN1);
@@ -245,7 +224,6 @@ fn r6_user_password_latin1() {
 
 /// Ported from: NoPassword (on encrypted.pdf which is R2/R3)
 #[test]
-#[ignore = "not yet implemented"]
 fn encrypted_no_password_fails() {
     let path = fixture("encrypted_hello_world_r2.pdf");
     let result = Document::open_with_password(&path, b"");
@@ -257,7 +235,6 @@ fn encrypted_no_password_fails() {
 
 /// Ported from: BadPassword
 #[test]
-#[ignore = "not yet implemented"]
 fn encrypted_bad_password_fails() {
     let path = fixture("encrypted_hello_world_r2.pdf");
     let result = Document::open_with_password(&path, b"tiger");

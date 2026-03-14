@@ -93,14 +93,8 @@ impl SecurityHandler {
     /// Tries the password as user password first, then as owner password.
     /// Returns `Err` if the password is incorrect.
     pub fn new(dict: &EncryptDict, file_id: &[u8], password: &[u8]) -> Result<Self> {
-        let encrypt_key = if dict.revision >= 5 {
-            aes256_check_password(password, dict)
-        } else {
-            check_user_password(password, dict, file_id)
-                .or_else(|| check_owner_password(password, dict, file_id))
-        };
-        let encrypt_key =
-            encrypt_key.ok_or_else(|| Error::InvalidPdf("incorrect password".into()))?;
+        let encrypt_key = check_password_with_encoding(password, dict, file_id)
+            .ok_or_else(|| Error::InvalidPdf("incorrect password".into()))?;
         Ok(SecurityHandler {
             cipher: dict.cipher,
             encrypt_key,
@@ -157,6 +151,80 @@ impl SecurityHandler {
 }
 
 // --- Internal helper functions ---
+
+/// Try password as-is, then fall back to encoding conversion if non-ASCII.
+///
+/// For Rev 2-4: passwords use PDFDocEncoding (Latin-1). If the as-is check
+/// fails and the password is non-ASCII, try converting UTF-8 → Latin-1.
+/// For Rev 5+: passwords use UTF-8. If the as-is check fails and the
+/// password is non-ASCII, try converting Latin-1 → UTF-8.
+fn check_password_with_encoding(
+    password: &[u8],
+    dict: &EncryptDict,
+    file_id: &[u8],
+) -> Option<Vec<u8>> {
+    // Try password as-is
+    let result = check_password_impl(password, dict, file_id);
+    if result.is_some() {
+        return result;
+    }
+
+    // Only attempt conversion for non-ASCII passwords
+    if password.iter().all(|&b| b < 0x80) {
+        return None;
+    }
+
+    if dict.revision >= 5 {
+        // Latin-1 → UTF-8
+        let utf8 = latin1_to_utf8(password);
+        check_password_impl(&utf8, dict, file_id)
+    } else {
+        // UTF-8 → Latin-1
+        if let Some(latin1) = utf8_to_latin1(password) {
+            check_password_impl(&latin1, dict, file_id)
+        } else {
+            None
+        }
+    }
+}
+
+/// Core password check without encoding conversion.
+fn check_password_impl(password: &[u8], dict: &EncryptDict, file_id: &[u8]) -> Option<Vec<u8>> {
+    if dict.revision >= 5 {
+        aes256_check_password(password, dict)
+    } else {
+        check_user_password(password, dict, file_id)
+            .or_else(|| check_owner_password(password, dict, file_id))
+    }
+}
+
+/// Convert Latin-1 bytes to UTF-8.
+fn latin1_to_utf8(input: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(input.len() * 2);
+    for &b in input {
+        if b < 0x80 {
+            out.push(b);
+        } else {
+            // Latin-1 byte 0x80-0xFF maps to Unicode codepoint of same value
+            out.push(0xC0 | (b >> 6));
+            out.push(0x80 | (b & 0x3F));
+        }
+    }
+    out
+}
+
+/// Convert UTF-8 bytes to Latin-1. Returns None if any codepoint > U+00FF.
+fn utf8_to_latin1(input: &[u8]) -> Option<Vec<u8>> {
+    let s = core::str::from_utf8(input).ok()?;
+    let mut out = Vec::with_capacity(s.len());
+    for ch in s.chars() {
+        if ch as u32 > 0xFF {
+            return None;
+        }
+        out.push(ch as u8);
+    }
+    Some(out)
+}
 
 /// Pad or truncate a password to 32 bytes using the standard padding.
 fn pad_password(password: &[u8]) -> [u8; 32] {
@@ -375,56 +443,89 @@ fn aes256_check_password(password: &[u8], dict: &EncryptDict) -> Option<Vec<u8>>
 /// Revision 6 iterative hash (PDF 2.0, Algorithm 2.B).
 ///
 /// Uses SHA-256/384/512 adaptively with AES-128-CBC encryption rounds.
-fn revision6_hash(password: &[u8], salt: &[u8], input: &[u8]) -> [u8; 32] {
+/// Ported from PDFium `Revision6_Hash()`.
+fn revision6_hash(password: &[u8], salt: &[u8], vector: &[u8]) -> [u8; 32] {
     use crate::fdrm::{sha384, sha512};
 
-    let k = sha256::digest(&[password, salt, input].concat());
-    let mut round_key = k;
+    // Initial SHA-256 hash
+    let mut initial_input = Vec::with_capacity(password.len() + salt.len() + vector.len());
+    initial_input.extend_from_slice(password);
+    initial_input.extend_from_slice(salt);
+    initial_input.extend_from_slice(vector);
+    let digest = sha256::digest(&initial_input);
 
-    for round in 0..64 {
-        // Build K1 = password + round_key + input, repeated to fill 64 copies
-        let mut k1 = Vec::new();
-        k1.extend_from_slice(password);
-        k1.extend_from_slice(&round_key);
-        k1.extend_from_slice(input);
-        let k1_len = k1.len();
+    // `hash_result` holds the current hash (32, 48, or 64 bytes depending on round)
+    let mut hash_result: Vec<u8> = digest.to_vec();
+    let mut block_size: usize = 32;
+    let mut i: usize = 0;
 
-        // Repeat K1 to make at least 64 copies
-        let mut data = Vec::with_capacity(k1_len * 64);
+    loop {
+        // Build K1 = password + hash_result[..block_size] + vector
+        let input_span = &hash_result[..block_size];
+        let k1_len = password.len() + block_size + vector.len();
+
+        // Repeat K1 64 times to form content
+        let mut content = Vec::with_capacity(k1_len * 64);
         for _ in 0..64 {
-            data.extend_from_slice(&k1);
+            content.extend_from_slice(password);
+            content.extend_from_slice(input_span);
+            content.extend_from_slice(vector);
         }
 
-        // AES-128-CBC encrypt with key=round_key[0..16], iv=round_key[16..32]
-        let aes_key = &round_key[..16];
-        let aes_iv = &round_key[16..32];
-        // Truncate to multiple of 16 for AES
-        let encrypt_len = data.len() - (data.len() % 16);
-        let encrypted =
-            aes::encrypt_aes128_cbc(aes_key, aes_iv, &data[..encrypt_len]).unwrap_or(data);
+        // AES-128-CBC encrypt with key = first 16 bytes, iv = next 16 bytes
+        let aes_key = &hash_result[..16];
+        let aes_iv = &hash_result[16..32];
+        let encrypted = aes::encrypt_aes128_cbc(aes_key, aes_iv, &content).unwrap_or(content);
 
-        // Select hash based on last byte mod 3
-        let last_byte = *encrypted.last().unwrap_or(&0);
-        let hash_result: Vec<u8> = match last_byte % 3 {
-            0 => sha256::digest(&encrypted).to_vec(),
-            1 => sha384::digest(&encrypted).to_vec(),
-            _ => sha512::digest(&encrypted).to_vec(),
+        // Select hash based on first 16 bytes interpreted as big-endian mod 3
+        let selector = big_order_mod3(&encrypted);
+        let new_hash: Vec<u8> = match selector {
+            0 => {
+                block_size = 32;
+                sha256::digest(&encrypted).to_vec()
+            }
+            1 => {
+                block_size = 48;
+                sha384::digest(&encrypted).to_vec()
+            }
+            _ => {
+                block_size = 64;
+                sha512::digest(&encrypted).to_vec()
+            }
         };
 
-        // Update round_key with first 32 bytes of hash
-        round_key = [0u8; 32];
-        round_key.copy_from_slice(&hash_result[..32]);
+        hash_result = new_hash;
+        i += 1;
 
-        // Check termination condition after round 63
-        if round >= 63 {
-            let last = *encrypted.last().unwrap_or(&0);
-            if last <= (round - 32) as u8 {
-                break;
-            }
+        // Termination: at least 64 rounds, then check last byte of encrypted output
+        let last_byte = *encrypted.last().unwrap_or(&0) as usize;
+        if i >= 64 && (i - 32) >= last_byte {
+            break;
         }
     }
 
-    round_key
+    let mut out = [0u8; 32];
+    out.copy_from_slice(&hash_result[..32]);
+    out
+}
+
+/// Compute `first 16 bytes as big-endian 128-bit integer mod 3`.
+///
+/// Ported from PDFium `BigOrder64BitsMod3()`.
+fn big_order_mod3(data: &[u8]) -> u64 {
+    let mut ret: u64 = 0;
+    for i in 0..4 {
+        ret <<= 32;
+        let offset = i * 4;
+        ret |= u32::from_be_bytes([
+            data[offset],
+            data[offset + 1],
+            data[offset + 2],
+            data[offset + 3],
+        ]) as u64;
+        ret %= 3;
+    }
+    ret
 }
 
 /// Parse permissions from the /P integer value.
