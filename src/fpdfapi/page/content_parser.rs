@@ -251,7 +251,7 @@ struct Parser<'a, R: Read + Seek> {
     in_bt: bool,
     /// Characters collected for the current text object.
     text_chars: Vec<CharEntry>,
-    /// Text matrix at BT entry (recorded once per BT block).
+    /// Text matrix for the current BT/ET block (updated by `Tm` within the block).
     bt_text_matrix: Matrix,
     /// CTM at BT entry.
     bt_ctm: Matrix,
