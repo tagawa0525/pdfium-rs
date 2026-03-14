@@ -61,7 +61,7 @@ pub fn render_text(
         p.set_color(color_to_tiny_skia(text_obj.stroke_color));
         p.anti_alias = true;
         let s = tiny_skia::Stroke {
-            width: 1.0,
+            width: text_obj.line_width,
             ..Default::default()
         };
         (Some(p), Some(s))
@@ -205,6 +205,7 @@ mod tests {
             fill_color: Color::BLACK,
             stroke_color: Color::BLACK,
             text_rendering_mode: 0,
+            line_width: 1.0,
         }
     }
 

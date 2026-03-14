@@ -331,6 +331,7 @@ impl<'a, R: Read + Seek> Parser<'a, R> {
                 fill_color: self.gs.color_state.fill_color(),
                 stroke_color: self.gs.color_state.stroke_color(),
                 text_rendering_mode: self.gs.text_state.text_rendering_mode,
+                line_width: self.gs.line_width,
             })));
         }
     }
