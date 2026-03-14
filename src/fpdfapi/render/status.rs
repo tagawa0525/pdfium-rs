@@ -93,7 +93,6 @@ mod tests {
     }
 
     #[test]
-
     fn render_empty_page_is_all_white() {
         let page = simple_page(100.0, 100.0, vec![]);
         let bmp = render(&page, 72.0).unwrap();
@@ -107,7 +106,6 @@ mod tests {
     }
 
     #[test]
-
     fn render_red_rect_center_pixel() {
         // 100×100 pt page with a red filled rect from (25,25) to (75,75)
         let mut path = Path::new();
@@ -165,7 +163,6 @@ mod tests {
     }
 
     #[test]
-
     fn render_dpi_scaling_doubles_bitmap_size() {
         let page = simple_page(100.0, 200.0, vec![]);
         let bmp72 = render(&page, 72.0).unwrap();
@@ -177,7 +174,6 @@ mod tests {
     }
 
     #[test]
-
     fn render_image_object_placement() {
         // 100×100 pt page with a 2×2 red image placed at (25,25), scaled to 50×50 pt
         // Image CTM: [50, 0, 0, 50, 25, 25]
