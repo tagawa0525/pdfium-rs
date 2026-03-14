@@ -70,7 +70,36 @@ pub trait FormExt {
 
 impl<R: Read + Seek> FormExt for Document<R> {
     fn form(&mut self) -> Result<Option<InteractiveForm>> {
-        todo!()
+        let catalog = self.catalog()?.clone();
+
+        let acroform_obj = match catalog.get(b"AcroForm").cloned() {
+            Some(obj) => obj,
+            None => return Ok(None),
+        };
+
+        let acroform = match acroform_obj {
+            PdfObject::Dictionary(d) => d,
+            PdfObject::Reference(id) => self
+                .object(id.num)?
+                .as_dict()
+                .ok_or_else(|| Error::InvalidPdf("/AcroForm is not a dictionary".into()))?
+                .clone(),
+            _ => return Err(Error::InvalidPdf("/AcroForm is not a dictionary".into())),
+        };
+
+        let field_nums: Vec<u32> = acroform
+            .get_array(b"Fields")
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|o| o.as_reference().map(|id| id.num))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let mut fields = Vec::new();
+        collect_fields(self, field_nums, None, None, 0, &mut fields)?;
+
+        Ok(Some(InteractiveForm { fields }))
     }
 }
 
@@ -78,7 +107,6 @@ impl<R: Read + Seek> FormExt for Document<R> {
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-#[allow(dead_code)]
 fn collect_fields<R: Read + Seek>(
     doc: &mut Document<R>,
     field_nums: Vec<u32>,
@@ -303,7 +331,6 @@ mod tests {
     // --- form() tests ---
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn form_returns_none_without_acroform() {
         let pdf = minimal_pdf();
         let mut doc = Document::from_reader(Cursor::new(pdf)).unwrap();
@@ -311,7 +338,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn form_text_field() {
         let pdf = pdf_with_text_field();
         let mut doc = Document::from_reader(Cursor::new(pdf)).unwrap();
@@ -325,7 +351,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn form_button_types() {
         let pdf = pdf_with_button_fields();
         let mut doc = Document::from_reader(Cursor::new(pdf)).unwrap();
@@ -351,7 +376,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn form_field_full_name_from_hierarchy() {
         let pdf = pdf_with_nested_fields();
         let mut doc = Document::from_reader(Cursor::new(pdf)).unwrap();
@@ -362,7 +386,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn form_listbox_with_options() {
         let pdf = pdf_with_listbox();
         let mut doc = Document::from_reader(Cursor::new(pdf)).unwrap();
@@ -378,7 +401,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn form_read_only_required_flags() {
         let pdf = pdf_with_flagged_field();
         let mut doc = Document::from_reader(Cursor::new(pdf)).unwrap();
