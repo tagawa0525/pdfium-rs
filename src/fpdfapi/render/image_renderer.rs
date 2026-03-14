@@ -10,7 +10,12 @@ pub fn render_image(
     image_obj: &ImageObject,
     page_to_device: tiny_skia::Transform,
 ) {
-    if image_obj.width == 0 || image_obj.height == 0 || image_obj.data.is_empty() {
+    // Validate dimensions and data length before any allocation.
+    let expected_len = (image_obj.width as usize)
+        .checked_mul(image_obj.height as usize)
+        .and_then(|n| n.checked_mul(4))
+        .unwrap_or(0);
+    if expected_len == 0 || image_obj.data.len() != expected_len {
         return;
     }
 
