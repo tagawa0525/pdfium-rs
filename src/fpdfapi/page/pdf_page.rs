@@ -1,3 +1,4 @@
+use crate::fpdftext::text_find::{FindOptions, TextFind, TextMatch};
 use crate::fpdftext::text_page::TextPage;
 use crate::fxcrt::coordinates::Rect;
 
@@ -23,6 +24,14 @@ impl Page {
     /// newlines are inserted based on glyph positions.
     pub fn extract_text(&self) -> String {
         TextPage::build(self).text().to_string()
+    }
+
+    /// Find all occurrences of `query` in this page (case-insensitive by default).
+    ///
+    /// Returns character-index ranges into the page's `TextPage`.
+    pub fn find_text(&self, query: &str) -> Vec<TextMatch> {
+        let tp = TextPage::build(self);
+        TextFind::find_all(&tp, query, &FindOptions::default())
     }
 }
 
