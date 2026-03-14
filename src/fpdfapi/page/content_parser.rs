@@ -2,11 +2,14 @@ use std::collections::HashMap;
 use std::io::{Read, Seek};
 
 use crate::fpdfapi::font::pdf_font::PdfFont;
+use crate::fpdfapi::page::color_space::{ColorSpace, Components};
 use crate::fpdfapi::page::graphics_state::GraphicsState;
-use crate::fpdfapi::page::page_object::{CharEntry, PageObject, TextObject};
+use crate::fpdfapi::page::page_object::{CharEntry, FillRule, PageObject, PathObject, TextObject};
 use crate::fpdfapi::parser::document::Document;
 use crate::fpdfapi::parser::object::{PdfDictionary, PdfObject};
 use crate::fxcrt::coordinates::{Matrix, Point};
+use crate::fxge::color::{LineCap, LineJoin};
+use crate::fxge::path::Path;
 
 // ── Token ────────────────────────────────────────────────────────────────────
 
@@ -259,6 +262,10 @@ struct Parser<'a, R: Read + Seek> {
     bt_font: Option<PdfFont>,
     /// Font size at BT entry.
     bt_font_size: f64,
+    /// Current path being built by path construction operators (m, l, c, etc.).
+    current_path: Path,
+    /// Whether clipping was requested on the current path (W/W*).
+    clip_pending: bool,
 }
 
 impl<'a, R: Read + Seek> Parser<'a, R> {
@@ -279,6 +286,8 @@ impl<'a, R: Read + Seek> Parser<'a, R> {
             bt_ctm: Matrix::default(),
             bt_font: None,
             bt_font_size: 0.0,
+            current_path: Path::new(),
+            clip_pending: false,
         }
     }
 
@@ -500,6 +509,284 @@ impl<'a, R: Read + Seek> Parser<'a, R> {
                 }
             }
 
+            // ── Path construction ─────────────────────────────────────────────
+            b"m" => {
+                if let (Some(Token::Number(y)), Some(Token::Number(x))) =
+                    (self.stack.pop(), self.stack.pop())
+                {
+                    self.current_path.move_to(Point::new(x as f32, y as f32));
+                }
+            }
+            b"l" => {
+                if let (Some(Token::Number(y)), Some(Token::Number(x))) =
+                    (self.stack.pop(), self.stack.pop())
+                {
+                    self.current_path.line_to(Point::new(x as f32, y as f32));
+                }
+            }
+            b"c" => {
+                if let (
+                    Some(Token::Number(y3)),
+                    Some(Token::Number(x3)),
+                    Some(Token::Number(y2)),
+                    Some(Token::Number(x2)),
+                    Some(Token::Number(y1)),
+                    Some(Token::Number(x1)),
+                ) = (
+                    self.stack.pop(),
+                    self.stack.pop(),
+                    self.stack.pop(),
+                    self.stack.pop(),
+                    self.stack.pop(),
+                    self.stack.pop(),
+                ) {
+                    self.current_path.cubic_to(
+                        Point::new(x1 as f32, y1 as f32),
+                        Point::new(x2 as f32, y2 as f32),
+                        Point::new(x3 as f32, y3 as f32),
+                    );
+                }
+            }
+            b"v" => {
+                // current point as first control point
+                if let (
+                    Some(Token::Number(y3)),
+                    Some(Token::Number(x3)),
+                    Some(Token::Number(y2)),
+                    Some(Token::Number(x2)),
+                ) = (
+                    self.stack.pop(),
+                    self.stack.pop(),
+                    self.stack.pop(),
+                    self.stack.pop(),
+                ) {
+                    let cp = self
+                        .current_path
+                        .points
+                        .last()
+                        .map(|p| p.point)
+                        .unwrap_or_default();
+                    self.current_path.cubic_to(
+                        cp,
+                        Point::new(x2 as f32, y2 as f32),
+                        Point::new(x3 as f32, y3 as f32),
+                    );
+                }
+            }
+            b"y" => {
+                // endpoint as second control point
+                if let (
+                    Some(Token::Number(y3)),
+                    Some(Token::Number(x3)),
+                    Some(Token::Number(y1)),
+                    Some(Token::Number(x1)),
+                ) = (
+                    self.stack.pop(),
+                    self.stack.pop(),
+                    self.stack.pop(),
+                    self.stack.pop(),
+                ) {
+                    self.current_path.cubic_to(
+                        Point::new(x1 as f32, y1 as f32),
+                        Point::new(x3 as f32, y3 as f32),
+                        Point::new(x3 as f32, y3 as f32),
+                    );
+                }
+            }
+            b"h" => {
+                self.current_path.close();
+            }
+            b"re" => {
+                if let (
+                    Some(Token::Number(h)),
+                    Some(Token::Number(w)),
+                    Some(Token::Number(y)),
+                    Some(Token::Number(x)),
+                ) = (
+                    self.stack.pop(),
+                    self.stack.pop(),
+                    self.stack.pop(),
+                    self.stack.pop(),
+                ) {
+                    self.current_path
+                        .append_rect(x as f32, y as f32, w as f32, h as f32);
+                }
+            }
+
+            // ── Path painting ────────────────────────────────────────────────
+            b"S" => self.emit_path(FillRule::None, true),
+            b"s" => {
+                self.current_path.close();
+                self.emit_path(FillRule::None, true);
+            }
+            b"f" | b"F" => self.emit_path(FillRule::NonZero, false),
+            b"f*" => self.emit_path(FillRule::EvenOdd, false),
+            b"B" => self.emit_path(FillRule::NonZero, true),
+            b"B*" => self.emit_path(FillRule::EvenOdd, true),
+            b"b" => {
+                self.current_path.close();
+                self.emit_path(FillRule::NonZero, true);
+            }
+            b"b*" => {
+                self.current_path.close();
+                self.emit_path(FillRule::EvenOdd, true);
+            }
+            b"n" => {
+                // Discard path (no-op painting, clipping may still apply)
+                self.current_path = Path::new();
+                self.clip_pending = false;
+            }
+
+            // ── Clipping ─────────────────────────────────────────────────────
+            b"W" | b"W*" => {
+                // Clipping is applied by the next painting operator.
+                // For now, just flag it — actual clip implementation is deferred.
+                self.clip_pending = true;
+            }
+
+            // ── Color operators ──────────────────────────────────────────────
+            b"g" => {
+                if let Some(Token::Number(gray)) = self.stack.pop() {
+                    self.gs.color_state.fill_color_space = ColorSpace::DeviceGray;
+                    self.gs.color_state.fill_components = Components::new(&[gray as f32]);
+                }
+            }
+            b"G" => {
+                if let Some(Token::Number(gray)) = self.stack.pop() {
+                    self.gs.color_state.stroke_color_space = ColorSpace::DeviceGray;
+                    self.gs.color_state.stroke_components = Components::new(&[gray as f32]);
+                }
+            }
+            b"rg" => {
+                if let (Some(Token::Number(b)), Some(Token::Number(g)), Some(Token::Number(r))) =
+                    (self.stack.pop(), self.stack.pop(), self.stack.pop())
+                {
+                    self.gs.color_state.fill_color_space = ColorSpace::DeviceRGB;
+                    self.gs.color_state.fill_components =
+                        Components::new(&[r as f32, g as f32, b as f32]);
+                }
+            }
+            b"RG" => {
+                if let (Some(Token::Number(b)), Some(Token::Number(g)), Some(Token::Number(r))) =
+                    (self.stack.pop(), self.stack.pop(), self.stack.pop())
+                {
+                    self.gs.color_state.stroke_color_space = ColorSpace::DeviceRGB;
+                    self.gs.color_state.stroke_components =
+                        Components::new(&[r as f32, g as f32, b as f32]);
+                }
+            }
+            b"k" => {
+                if let (
+                    Some(Token::Number(k)),
+                    Some(Token::Number(y)),
+                    Some(Token::Number(m)),
+                    Some(Token::Number(c)),
+                ) = (
+                    self.stack.pop(),
+                    self.stack.pop(),
+                    self.stack.pop(),
+                    self.stack.pop(),
+                ) {
+                    self.gs.color_state.fill_color_space = ColorSpace::DeviceCMYK;
+                    self.gs.color_state.fill_components =
+                        Components::new(&[c as f32, m as f32, y as f32, k as f32]);
+                }
+            }
+            b"K" => {
+                if let (
+                    Some(Token::Number(k)),
+                    Some(Token::Number(y)),
+                    Some(Token::Number(m)),
+                    Some(Token::Number(c)),
+                ) = (
+                    self.stack.pop(),
+                    self.stack.pop(),
+                    self.stack.pop(),
+                    self.stack.pop(),
+                ) {
+                    self.gs.color_state.stroke_color_space = ColorSpace::DeviceCMYK;
+                    self.gs.color_state.stroke_components =
+                        Components::new(&[c as f32, m as f32, y as f32, k as f32]);
+                }
+            }
+            b"cs" => {
+                // color space name — approximate to Device equivalent
+                if let Some(Token::Name(name)) = self.stack.pop()
+                    && let Some(cs) = name_to_color_space(&name)
+                {
+                    self.gs.color_state.fill_color_space = cs;
+                }
+            }
+            b"CS" => {
+                if let Some(Token::Name(name)) = self.stack.pop()
+                    && let Some(cs) = name_to_color_space(&name)
+                {
+                    self.gs.color_state.stroke_color_space = cs;
+                }
+            }
+            b"sc" | b"scn" => {
+                let n = self.gs.color_state.fill_color_space.num_components();
+                let comps = self.pop_numbers(n);
+                if comps.len() == n {
+                    self.gs.color_state.fill_components = Components::new(&comps);
+                }
+            }
+            b"SC" | b"SCN" => {
+                let n = self.gs.color_state.stroke_color_space.num_components();
+                let comps = self.pop_numbers(n);
+                if comps.len() == n {
+                    self.gs.color_state.stroke_components = Components::new(&comps);
+                }
+            }
+
+            // ── Graphics state operators ─────────────────────────────────────
+            b"w" => {
+                if let Some(Token::Number(v)) = self.stack.pop() {
+                    self.gs.line_width = v as f32;
+                }
+            }
+            b"J" => {
+                if let Some(Token::Number(v)) = self.stack.pop() {
+                    self.gs.line_cap = match v as u8 {
+                        1 => LineCap::Round,
+                        2 => LineCap::Square,
+                        _ => LineCap::Butt,
+                    };
+                }
+            }
+            b"j" => {
+                if let Some(Token::Number(v)) = self.stack.pop() {
+                    self.gs.line_join = match v as u8 {
+                        1 => LineJoin::Round,
+                        2 => LineJoin::Bevel,
+                        _ => LineJoin::Miter,
+                    };
+                }
+            }
+            b"M" => {
+                if let Some(Token::Number(v)) = self.stack.pop() {
+                    self.gs.miter_limit = v as f32;
+                }
+            }
+            b"d" => {
+                // [ array ] phase d
+                if let (Some(Token::Number(phase)), Some(Token::Array(arr))) =
+                    (self.stack.pop(), self.stack.pop())
+                {
+                    self.gs.dash_array = arr
+                        .iter()
+                        .filter_map(|t| {
+                            if let Token::Number(n) = t {
+                                Some(*n as f32)
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+                    self.gs.dash_phase = phase as f32;
+                }
+            }
+
             // ── Inline image — skip until EI ─────────────────────────────────
             b"BI" => {
                 self.skip_inline_image();
@@ -509,6 +796,41 @@ impl<'a, R: Read + Seek> Parser<'a, R> {
             _ => {}
         }
         self.stack.clear();
+    }
+
+    /// Emit the current path as a PathObject with the given painting attributes.
+    fn emit_path(&mut self, fill_rule: FillRule, stroke: bool) {
+        let path = std::mem::replace(&mut self.current_path, Path::new());
+        if path.points.is_empty() {
+            return;
+        }
+        self.objects.push(PageObject::Path(Box::new(PathObject {
+            path,
+            fill_rule,
+            stroke,
+            fill_color: self.gs.color_state.fill_color(),
+            stroke_color: self.gs.color_state.stroke_color(),
+            line_width: self.gs.line_width,
+            line_cap: self.gs.line_cap,
+            line_join: self.gs.line_join,
+            miter_limit: self.gs.miter_limit,
+            ctm: self.gs.ctm,
+        })));
+        self.clip_pending = false;
+    }
+
+    /// Pop `n` numbers from the stack (bottom-to-top order in result).
+    fn pop_numbers(&mut self, n: usize) -> Vec<f32> {
+        let mut result = Vec::with_capacity(n);
+        for _ in 0..n {
+            if let Some(Token::Number(v)) = self.stack.pop() {
+                result.push(v as f32);
+            } else {
+                return Vec::new();
+            }
+        }
+        result.reverse();
+        result
     }
 
     /// Load a font by resource name (raw bytes) into `gs.font` and update `bt_font`.
@@ -643,6 +965,16 @@ impl<'a, R: Read + Seek> Parser<'a, R> {
     }
 }
 
+/// Map a PDF color space name to a `ColorSpace` enum value.
+fn name_to_color_space(name: &[u8]) -> Option<ColorSpace> {
+    match name {
+        b"DeviceGray" | b"G" => Some(ColorSpace::DeviceGray),
+        b"DeviceRGB" | b"RGB" => Some(ColorSpace::DeviceRGB),
+        b"DeviceCMYK" | b"CMYK" => Some(ColorSpace::DeviceCMYK),
+        _ => None, // ICCBased, CalGray, etc. — ignored for now
+    }
+}
+
 // ── Public API ────────────────────────────────────────────────────────────────
 
 /// Parse a PDF content stream buffer and return the page objects it defines.
@@ -664,6 +996,7 @@ mod tests {
     use crate::fpdfapi::parser::document::Document;
     use crate::fpdfapi::parser::object::{PdfDictionary, PdfObject};
     use crate::fxcrt::bytestring::PdfByteString;
+    use crate::fxge::color::Color;
     use std::io::Cursor;
 
     fn minimal_pdf() -> Vec<u8> {
@@ -863,10 +1196,127 @@ mod tests {
     #[test]
     fn unknown_operators_are_skipped() {
         let mut doc = make_doc();
-        let resources = resources_with_type1();
-        // Path operators should not crash or produce objects
-        let stream = b"1 0 0 RG 0 0 100 100 re f BT /F1 10 Tf (A) Tj ET";
-        let result = parse_content_stream(stream, &resources, &mut doc);
+        // Truly unknown operators
+        let stream = b"42 FooBar";
+        let result = parse_content_stream(stream, &PdfDictionary::new(), &mut doc);
+        assert!(result.is_empty());
+    }
+
+    // ── Path construction + painting tests ───────────────────────────────
+
+    #[test]
+    fn moveto_lineto_stroke() {
+        let mut doc = make_doc();
+        let stream = b"100 200 m 300 400 l S";
+        let result = parse_content_stream(stream, &PdfDictionary::new(), &mut doc);
         assert_eq!(result.len(), 1);
+        if let PageObject::Path(obj) = &result[0] {
+            assert_eq!(obj.path.points.len(), 2);
+            assert!(obj.stroke);
+            assert_eq!(obj.fill_rule, FillRule::None);
+        } else {
+            panic!("expected Path");
+        }
+    }
+
+    #[test]
+    fn rect_fill_nonzero() {
+        let mut doc = make_doc();
+        let stream = b"0 0 100 50 re f";
+        let result = parse_content_stream(stream, &PdfDictionary::new(), &mut doc);
+        assert_eq!(result.len(), 1);
+        if let PageObject::Path(obj) = &result[0] {
+            assert_eq!(obj.fill_rule, FillRule::NonZero);
+            assert!(!obj.stroke);
+            // rect = move + 3 lines, 4 points total
+            assert_eq!(obj.path.points.len(), 4);
+        } else {
+            panic!("expected Path");
+        }
+    }
+
+    #[test]
+    fn stroke_color_rgb() {
+        let mut doc = make_doc();
+        let stream = b"1 0 0 RG 0 0 100 100 re S";
+        let result = parse_content_stream(stream, &PdfDictionary::new(), &mut doc);
+        assert_eq!(result.len(), 1);
+        if let PageObject::Path(obj) = &result[0] {
+            assert_eq!(obj.stroke_color, Color::rgb(255, 0, 0));
+        } else {
+            panic!("expected Path");
+        }
+    }
+
+    #[test]
+    fn fill_color_gray() {
+        let mut doc = make_doc();
+        let stream = b"0.5 g 0 0 50 50 re f";
+        let result = parse_content_stream(stream, &PdfDictionary::new(), &mut doc);
+        assert_eq!(result.len(), 1);
+        if let PageObject::Path(obj) = &result[0] {
+            assert_eq!(obj.fill_color, Color::gray(128));
+        } else {
+            panic!("expected Path");
+        }
+    }
+
+    #[test]
+    fn text_and_path_mixed() {
+        let mut doc = make_doc();
+        let resources = resources_with_type1();
+        let stream = b"0 0 100 100 re f BT /F1 10 Tf (A) Tj ET";
+        let result = parse_content_stream(stream, &resources, &mut doc);
+        assert_eq!(result.len(), 2);
+        assert!(matches!(result[0], PageObject::Path(_)));
+        assert!(matches!(result[1], PageObject::Text(_)));
+    }
+
+    #[test]
+    fn fill_even_odd() {
+        let mut doc = make_doc();
+        let stream = b"0 0 100 100 re f*";
+        let result = parse_content_stream(stream, &PdfDictionary::new(), &mut doc);
+        assert_eq!(result.len(), 1);
+        if let PageObject::Path(obj) = &result[0] {
+            assert_eq!(obj.fill_rule, FillRule::EvenOdd);
+        } else {
+            panic!("expected Path");
+        }
+    }
+
+    #[test]
+    fn line_width_operator() {
+        let mut doc = make_doc();
+        let stream = b"3 w 0 0 100 100 re S";
+        let result = parse_content_stream(stream, &PdfDictionary::new(), &mut doc);
+        if let PageObject::Path(obj) = &result[0] {
+            assert!((obj.line_width - 3.0).abs() < 1e-5);
+        } else {
+            panic!("expected Path");
+        }
+    }
+
+    #[test]
+    fn fill_and_stroke() {
+        let mut doc = make_doc();
+        let stream = b"1 0 0 rg 0 1 0 RG 0 0 100 100 re B";
+        let result = parse_content_stream(stream, &PdfDictionary::new(), &mut doc);
+        if let PageObject::Path(obj) = &result[0] {
+            assert_eq!(obj.fill_rule, FillRule::NonZero);
+            assert!(obj.stroke);
+            assert_eq!(obj.fill_color, Color::rgb(255, 0, 0));
+            assert_eq!(obj.stroke_color, Color::rgb(0, 255, 0));
+        } else {
+            panic!("expected Path");
+        }
+    }
+
+    #[test]
+    fn n_discards_path() {
+        let mut doc = make_doc();
+        let stream = b"0 0 100 100 re n";
+        let result = parse_content_stream(stream, &PdfDictionary::new(), &mut doc);
+        assert!(result.is_empty());
     }
 }
