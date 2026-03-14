@@ -199,11 +199,11 @@ impl PdfDictionary {
     }
 
     pub fn get_f64(&self, key: &[u8]) -> Option<f64> {
-        todo!()
+        self.get(key).and_then(|o| o.as_f64())
     }
 
     pub fn get_reference(&self, key: &[u8]) -> Option<ObjectId> {
-        todo!()
+        self.get(key).and_then(|o| o.as_reference())
     }
 }
 
@@ -365,7 +365,6 @@ mod tests {
     // --- get_f64 ---
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn dict_get_f64_from_integer() {
         let mut d = PdfDictionary::new();
         d.set("N", PdfObject::Integer(12));
@@ -373,15 +372,13 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn dict_get_f64_from_real() {
         let mut d = PdfDictionary::new();
-        d.set("N", PdfObject::Real(3.14));
-        assert!((d.get_f64(b"N").unwrap() - 3.14).abs() < 1e-9);
+        d.set("N", PdfObject::Real(2.72));
+        assert!((d.get_f64(b"N").unwrap() - 2.72).abs() < 1e-9);
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn dict_get_f64_from_name_is_none() {
         let mut d = PdfDictionary::new();
         d.set("K", PdfObject::Name(PdfByteString::from("WinAnsiEncoding")));
@@ -389,7 +386,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn dict_get_f64_missing_key_is_none() {
         let d = PdfDictionary::new();
         assert_eq!(d.get_f64(b"Missing"), None);
@@ -398,7 +394,6 @@ mod tests {
     // --- get_reference ---
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn dict_get_reference_returns_object_id() {
         let mut d = PdfDictionary::new();
         d.set("Font", PdfObject::Reference(ObjectId::new(5, 0)));
@@ -406,7 +401,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn dict_get_reference_from_non_reference_is_none() {
         let mut d = PdfDictionary::new();
         d.set("Font", PdfObject::Integer(5));
@@ -414,7 +408,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn dict_get_reference_missing_key_is_none() {
         let d = PdfDictionary::new();
         assert_eq!(d.get_reference(b"Missing"), None);

@@ -270,7 +270,10 @@ impl<R: Read + Seek> Document<R> {
     ///
     /// Returns an error if the referenced object does not exist.
     pub fn resolve(&mut self, obj: &PdfObject) -> Result<PdfObject> {
-        todo!()
+        match obj {
+            PdfObject::Reference(id) => self.object(id.num).cloned(),
+            other => Ok(other.clone()),
+        }
     }
 
     /// Get the root (catalog) dictionary.
@@ -386,7 +389,6 @@ mod tests {
     // --- Document::resolve ---
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn resolve_direct_object_returns_itself() {
         let data = minimal_pdf();
         let mut doc = Document::from_reader(Cursor::new(data)).unwrap();
@@ -396,7 +398,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn resolve_reference_follows_to_stored_object() {
         let data = minimal_pdf();
         let mut doc = Document::from_reader(Cursor::new(data)).unwrap();
@@ -416,7 +417,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn resolve_reference_to_missing_object_is_error() {
         let data = minimal_pdf();
         let mut doc = Document::from_reader(Cursor::new(data)).unwrap();
