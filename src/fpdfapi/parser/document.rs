@@ -11,11 +11,62 @@ use crate::fpdfapi::parser::encrypt_dict;
 use crate::fpdfapi::parser::object::{PdfDictionary, PdfObject, PdfStream};
 use crate::fpdfapi::parser::security::SecurityHandler;
 use crate::fpdfapi::parser::syntax::SyntaxParser;
+use crate::fxcrt::coordinates::Rect;
 
 /// Lazy object storage. Objects are parsed on demand.
 enum LazyObject {
     Unparsed { offset: u64 },
     Parsed(PdfObject),
+}
+
+/// Inherited page-tree attributes, propagated from `/Pages` nodes to leaf `/Page` dicts.
+#[derive(Default, Clone)]
+struct PageInherit {
+    media_box: Option<Rect>,
+    crop_box: Option<Rect>,
+    /// Clockwise rotation in degrees. Normalised to a multiple of 90.
+    rotation: u16,
+    resources: Option<PdfDictionary>,
+}
+
+impl PageInherit {
+    /// Return a new `PageInherit` updated with any attributes present in `dict`.
+    /// Child-level values shadow parent-level ones, matching the PDF spec.
+    fn merge(mut self, dict: &PdfDictionary) -> Self {
+        if let Some(arr) = dict.get_array(b"MediaBox")
+            && let Some(r) = array_to_rect(arr)
+        {
+            self.media_box = Some(r);
+        }
+        if let Some(arr) = dict.get_array(b"CropBox")
+            && let Some(r) = array_to_rect(arr)
+        {
+            self.crop_box = Some(r);
+        }
+        if let Some(rot) = dict.get_i32(b"Rotate") {
+            // PDF spec requires /Rotate to be a multiple of 90. Normalise with
+            // integer division so non-conformant values are floored to the
+            // nearest valid step (e.g. 45 → 0, 100 → 90).
+            let normalised = rot.rem_euclid(360) / 90 * 90;
+            self.rotation = normalised as u16;
+        }
+        if let Some(res) = dict.get_dict(b"Resources") {
+            self.resources = Some(res.clone());
+        }
+        self
+    }
+}
+
+/// Parse a 4-element PDF array `[left bottom right top]` into a `Rect`.
+fn array_to_rect(arr: &[PdfObject]) -> Option<Rect> {
+    if arr.len() < 4 {
+        return None;
+    }
+    let l = arr[0].as_f64()? as f32;
+    let b = arr[1].as_f64()? as f32;
+    let r = arr[2].as_f64()? as f32;
+    let t = arr[3].as_f64()? as f32;
+    Some(Rect::new(l, b, r, t))
 }
 
 /// Document metadata from the Info dictionary.
@@ -283,6 +334,165 @@ impl<R: Read + Seek> Document<R> {
             PdfObject::Reference(id) => self.object(id.num).cloned(),
             other => Ok(other.clone()),
         }
+    }
+
+    /// Get a page by zero-based index.
+    ///
+    /// Traverses the page tree, collecting inherited attributes
+    /// (MediaBox, CropBox, Rotation, Resources), decodes the content stream(s),
+    /// and returns a fully parsed [`Page`].
+    pub fn page(&mut self, n: u32) -> Result<crate::fpdfapi::page::pdf_page::Page> {
+        // Resolve /Root → /Pages
+        let pages_num = {
+            let root_id = self
+                .trailer
+                .get(b"Root")
+                .and_then(|o| o.as_reference())
+                .ok_or_else(|| Error::InvalidPdf("trailer missing /Root".into()))?;
+            let root_dict = self
+                .object(root_id.num)?
+                .as_dict()
+                .ok_or_else(|| Error::InvalidPdf("/Root is not a dictionary".into()))?
+                .clone();
+            root_dict
+                .get_reference(b"Pages")
+                .ok_or_else(|| Error::InvalidPdf("/Root missing /Pages".into()))?
+                .num
+        };
+
+        let mut idx = 0u32;
+        self.find_page_in_tree(pages_num, n, &mut idx, PageInherit::default())?
+            .ok_or_else(|| Error::InvalidPdf(format!("page index {n} out of range")))
+    }
+
+    /// Recursive page-tree traversal. Returns `Some(Page)` when the target
+    /// zero-based index is found, `None` otherwise.
+    fn find_page_in_tree(
+        &mut self,
+        node_id: u32,
+        target: u32,
+        idx: &mut u32,
+        inherit: PageInherit,
+    ) -> Result<Option<crate::fpdfapi::page::pdf_page::Page>> {
+        // Clone the dict to release the immutable borrow before any further &mut self calls.
+        let dict = self
+            .object(node_id)?
+            .as_dict()
+            .ok_or_else(|| Error::InvalidPdf(format!("page tree node {node_id} is not a dict")))?
+            .clone();
+
+        let node_type = dict.get_name(b"Type").map(|n| n.as_bytes().to_vec());
+        let merged = inherit.merge(&dict);
+
+        match node_type.as_deref() {
+            Some(b"Page") => {
+                if *idx == target {
+                    Ok(Some(self.build_page(dict, merged)?))
+                } else {
+                    *idx += 1;
+                    Ok(None)
+                }
+            }
+            _ => {
+                // Pages intermediate node (or missing /Type — treat as Pages).
+                let kids: Vec<u32> = dict
+                    .get_array(b"Kids")
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|o| o.as_reference().map(|id| id.num))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+
+                for kid_id in kids {
+                    if let Some(page) =
+                        self.find_page_in_tree(kid_id, target, idx, merged.clone())?
+                    {
+                        return Ok(Some(page));
+                    }
+                }
+                Ok(None)
+            }
+        }
+    }
+
+    /// Build a `Page` from a leaf page dictionary and its inherited attributes.
+    fn build_page(
+        &mut self,
+        page_dict: PdfDictionary,
+        inherit: PageInherit,
+    ) -> Result<crate::fpdfapi::page::pdf_page::Page> {
+        use crate::fpdfapi::page::content_parser::parse_content_stream;
+
+        let media_box = inherit
+            .media_box
+            .ok_or_else(|| Error::InvalidPdf("page missing /MediaBox".into()))?;
+        let resources = inherit.resources.unwrap_or_default();
+
+        let content_data = self.collect_page_contents(&page_dict)?;
+        let objects = parse_content_stream(&content_data, &resources, self);
+
+        Ok(crate::fpdfapi::page::pdf_page::Page {
+            media_box,
+            crop_box: inherit.crop_box,
+            rotation: inherit.rotation,
+            objects,
+        })
+    }
+
+    /// Concatenate all content streams referenced by `/Contents`.
+    fn collect_page_contents(&mut self, page_dict: &PdfDictionary) -> Result<Vec<u8>> {
+        let contents_obj = match page_dict.get(b"Contents") {
+            Some(obj) => obj.clone(),
+            None => return Ok(Vec::new()),
+        };
+
+        // A /Contents reference may point to a single stream *or* to an array of
+        // stream references (valid per PDF spec §7.7.3.3). Resolve first, then dispatch.
+        let stream_ids: Vec<u32> = match contents_obj {
+            PdfObject::Reference(id) => {
+                let resolved = self.object(id.num)?.clone();
+                match resolved {
+                    PdfObject::Stream(_) => vec![id.num],
+                    PdfObject::Array(arr) => arr
+                        .iter()
+                        .filter_map(|o| o.as_reference().map(|r| r.num))
+                        .collect(),
+                    _ => {
+                        return Err(Error::InvalidPdf(
+                            "/Contents reference is not a stream or array".into(),
+                        ));
+                    }
+                }
+            }
+            PdfObject::Array(arr) => arr
+                .iter()
+                .filter_map(|o| o.as_reference().map(|id| id.num))
+                .collect(),
+            _ => {
+                return Err(Error::InvalidPdf(
+                    "/Contents must be a stream reference or array".into(),
+                ));
+            }
+        };
+
+        let mut data = Vec::new();
+        for num in stream_ids {
+            let stream = self
+                .object(num)?
+                .as_stream()
+                .ok_or_else(|| {
+                    Error::InvalidPdf(format!("Contents element {num} is not a stream"))
+                })?
+                .clone();
+            let decoded = self.decode_stream(&stream, num, 0)?;
+            data.extend_from_slice(&decoded);
+            // Ensure operators from adjacent streams are separated by whitespace.
+            if !decoded.is_empty() && decoded.last() != Some(&b'\n') {
+                data.push(b'\n');
+            }
+        }
+        Ok(data)
     }
 
     /// Get the root (catalog) dictionary.
