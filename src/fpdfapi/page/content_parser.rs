@@ -328,6 +328,9 @@ impl<'a, R: Read + Seek> Parser<'a, R> {
                 font_size: self.bt_font_size,
                 text_matrix: self.bt_text_matrix,
                 ctm: self.bt_ctm,
+                fill_color: self.gs.color_state.fill_color(),
+                stroke_color: self.gs.color_state.stroke_color(),
+                text_rendering_mode: self.gs.text_state.text_rendering_mode,
             })));
         }
     }
@@ -1451,6 +1454,58 @@ mod tests {
             assert_eq!(&obj.data[0..4], &[255, 0, 0, 255]);
         } else {
             panic!("expected PageObject::Image, got {:?}", result);
+        }
+    }
+
+    #[test]
+    fn text_object_inherits_fill_color_from_graphics_state() {
+        let mut doc = make_doc();
+        let resources = resources_with_type1();
+        // Set fill color to red, then render text
+        let stream = b"1 0 0 rg BT /F1 12 Tf (A) Tj ET";
+        let result = parse_content_stream(stream, &resources, &mut doc);
+        assert_eq!(result.len(), 1);
+        if let PageObject::Text(obj) = &result[0] {
+            assert_eq!(obj.fill_color, Color::rgb(255, 0, 0));
+            // Default stroke color is black
+            assert_eq!(obj.stroke_color, Color::BLACK);
+            // Default rendering mode is 0 (fill)
+            assert_eq!(obj.text_rendering_mode, 0);
+        } else {
+            panic!("expected PageObject::Text");
+        }
+    }
+
+    #[test]
+    fn text_object_inherits_rendering_mode_and_stroke_color() {
+        let mut doc = make_doc();
+        let resources = resources_with_type1();
+        // Set stroke color to green, rendering mode to 1 (stroke)
+        let stream = b"0 1 0 RG BT /F1 12 Tf 1 Tr (A) Tj ET";
+        let result = parse_content_stream(stream, &resources, &mut doc);
+        assert_eq!(result.len(), 1);
+        if let PageObject::Text(obj) = &result[0] {
+            assert_eq!(obj.stroke_color, Color::rgb(0, 255, 0));
+            assert_eq!(obj.text_rendering_mode, 1);
+        } else {
+            panic!("expected PageObject::Text");
+        }
+    }
+
+    #[test]
+    fn text_object_default_colors_are_black() {
+        let mut doc = make_doc();
+        let resources = resources_with_type1();
+        // No color operators → default black
+        let stream = b"BT /F1 12 Tf (A) Tj ET";
+        let result = parse_content_stream(stream, &resources, &mut doc);
+        assert_eq!(result.len(), 1);
+        if let PageObject::Text(obj) = &result[0] {
+            assert_eq!(obj.fill_color, Color::BLACK);
+            assert_eq!(obj.stroke_color, Color::BLACK);
+            assert_eq!(obj.text_rendering_mode, 0);
+        } else {
+            panic!("expected PageObject::Text");
         }
     }
 }
