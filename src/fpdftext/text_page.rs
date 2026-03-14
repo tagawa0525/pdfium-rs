@@ -1,3 +1,4 @@
+use crate::fpdfapi::page::page_object::PageObject;
 use crate::fpdfapi::page::pdf_page::Page;
 use crate::fxcrt::coordinates::{Point, Rect};
 
@@ -25,8 +26,63 @@ impl TextPage {
     /// Iterates `TextObject`s in rendering order, converts character codes to
     /// Unicode, inserts synthetic spaces and newlines based on glyph positions,
     /// and accumulates the result.
-    pub fn build(_page: &Page) -> TextPage {
-        todo!("TextPage::build — implement in GREEN commit")
+    pub fn build(page: &Page) -> TextPage {
+        let mut chars: Vec<CharInfo> = Vec::new();
+        let mut text = String::new();
+
+        // Track the right edge and Y of the previously emitted glyph for
+        // space/newline heuristics.
+        let mut prev_right_x: Option<f32> = None;
+        let mut prev_y: Option<f32> = None;
+        let mut prev_font_size: f64 = 0.0;
+
+        for obj in &page.objects {
+            let text_obj = match obj {
+                PageObject::Text(t) => t,
+                _ => continue,
+            };
+
+            for entry in &text_obj.char_entries {
+                let unicode_str = match text_obj.font.unicode_from_char_code(entry.code) {
+                    Some(s) => s,
+                    None => continue,
+                };
+
+                let x = entry.origin.x;
+                let y = entry.origin.y;
+                let font_size = text_obj.font_size;
+                // Approximate glyph advance in user space (ignores CTM scale).
+                let char_width_user = (entry.width / 1000.0 * font_size) as f32;
+
+                // Insert separator before this glyph if needed.
+                if let (Some(py), Some(prx)) = (prev_y, prev_right_x) {
+                    let y_shift = (y - py).abs();
+                    if y_shift >= (prev_font_size * 0.5) as f32 {
+                        text.push('\n');
+                    } else if x - prx > (prev_font_size * 0.25) as f32 {
+                        text.push(' ');
+                    }
+                }
+
+                let char_box = Rect::new(x, y, x + char_width_user, y + font_size as f32);
+
+                for ch in unicode_str.chars() {
+                    chars.push(CharInfo {
+                        unicode: ch,
+                        origin: entry.origin,
+                        char_box,
+                        font_size,
+                    });
+                    text.push(ch);
+                }
+
+                prev_right_x = Some(x + char_width_user);
+                prev_y = Some(y);
+                prev_font_size = font_size;
+            }
+        }
+
+        TextPage { chars, text }
     }
 
     /// The full extracted text.
@@ -152,7 +208,6 @@ mod tests {
     // ── Tests ────────────────────────────────────────────────────────────────
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn empty_page_text_is_empty() {
         let mut doc = Document::from_reader(Cursor::new(empty_page_pdf())).unwrap();
         let page = doc.page(0).unwrap();
@@ -160,7 +215,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn single_ascii_char_extracted() {
         let mut doc = Document::from_reader(Cursor::new(text_pdf(b"A"))).unwrap();
         let page = doc.page(0).unwrap();
@@ -168,7 +222,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn multi_char_text_extracted() {
         let mut doc = Document::from_reader(Cursor::new(text_pdf(b"Hello"))).unwrap();
         let page = doc.page(0).unwrap();
@@ -176,7 +229,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn char_count_matches_unicode_chars() {
         let mut doc = Document::from_reader(Cursor::new(text_pdf(b"AB"))).unwrap();
         let page = doc.page(0).unwrap();
@@ -185,7 +237,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn char_info_origin_is_accessible() {
         let mut doc = Document::from_reader(Cursor::new(text_pdf(b"A"))).unwrap();
         let page = doc.page(0).unwrap();

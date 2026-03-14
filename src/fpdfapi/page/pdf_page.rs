@@ -1,3 +1,4 @@
+use crate::fpdftext::text_page::TextPage;
 use crate::fxcrt::coordinates::Rect;
 
 use super::page_object::PageObject;
@@ -21,7 +22,7 @@ impl Page {
     /// Builds a [`TextPage`] and returns its text. Synthetic spaces and
     /// newlines are inserted based on glyph positions.
     pub fn extract_text(&self) -> String {
-        todo!("Page::extract_text — implement in GREEN commit")
+        TextPage::build(self).text().to_string()
     }
 }
 

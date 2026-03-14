@@ -382,7 +382,17 @@ impl<R: Read + Seek> Document<R> {
             .clone();
 
         let node_type = dict.get_name(b"Type").map(|n| n.as_bytes().to_vec());
-        let merged = inherit.merge(&dict);
+        let mut merged = inherit.merge(&dict);
+
+        // /Resources may be an indirect reference (common in real PDFs).
+        // `PageInherit::merge` only handles direct dictionaries; resolve here.
+        if merged.resources.is_none()
+            && let Some(res_ref) = dict.get_reference(b"Resources")
+            && let Ok(obj) = self.object(res_ref.num)
+            && let Some(d) = obj.as_dict()
+        {
+            merged.resources = Some(d.clone());
+        }
 
         match node_type.as_deref() {
             Some(b"Page") => {
