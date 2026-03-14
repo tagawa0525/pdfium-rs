@@ -23,6 +23,23 @@ pub struct CustomEncoding {
     pub overrides: Vec<(u8, char)>,
 }
 
+/// A font's character encoding — either a predefined table or a customized one.
+#[derive(Debug, Clone)]
+pub enum FontEncoding {
+    Predefined(PredefinedEncoding),
+    Custom(CustomEncoding),
+}
+
+impl FontEncoding {
+    /// Map a character code to a Unicode char using this encoding.
+    pub fn decode(&self, code: u8) -> Option<char> {
+        match self {
+            FontEncoding::Predefined(enc) => unicode_from_predefined(*enc, code),
+            FontEncoding::Custom(enc) => unicode_from_custom(enc, code),
+        }
+    }
+}
+
 /// Map a single byte character code to a Unicode scalar using a predefined encoding.
 ///
 /// Returns `None` if the code is not mapped (undefined slot).
