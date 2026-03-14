@@ -49,8 +49,8 @@ Level 5: fpdfdoc（ブックマーク・注釈・フォーム）, fpdftext（テ
 
 ### エラー処理
 
-Phase 1: `std::error::Error`のみ（外部依存ゼロ方針に準拠）。
-Phase 2以降: `thiserror`構造化enumに移行。core → `Error`/`Result<T>`、他ドメイン → `<Domain>Error`/`<Domain>Result<T>`。`#[from]`で自動伝播。
+Phase 1-2: `std::error::Error`のみ（外部依存ゼロ方針に準拠）。
+Phase 3以降: 必要に応じて`thiserror`構造化enumに移行。core → `Error`/`Result<T>`、他ドメイン → `<Domain>Error`/`<Domain>Result<T>`。`#[from]`で自動伝播。
 
 ## PRワークフロー
 
