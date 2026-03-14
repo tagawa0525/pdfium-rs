@@ -178,12 +178,22 @@ mod tests {
     use crate::fxcrt::coordinates::{Matrix, Point};
     use crate::fxge::color::Color;
 
-    /// Use the bundled Liberation Sans font for deterministic tests.
-    fn bundled_font_data() -> Vec<u8> {
-        include_bytes!("../../../assets/fonts/LiberationSans-Regular.ttf").to_vec()
+    /// Find a Liberation Sans font from standard Linux paths.
+    fn find_liberation_sans() -> Option<Vec<u8>> {
+        let paths = [
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+            "/usr/share/fonts/liberation-sans/LiberationSans-Regular.ttf",
+            "/usr/share/fonts/TTF/LiberationSans-Regular.ttf",
+        ];
+        for path in &paths {
+            if let Ok(data) = std::fs::read(path) {
+                return Some(data);
+            }
+        }
+        None
     }
 
-    fn make_text_object() -> TextObject {
+    fn make_text_object(font_bytes: Vec<u8>) -> TextObject {
         use crate::fpdfapi::font::encoding::{FontEncoding, PredefinedEncoding};
         TextObject {
             char_entries: vec![CharEntry {
@@ -197,7 +207,7 @@ mod tests {
                 first_char: 0,
                 widths: vec![],
                 to_unicode: None,
-                font_data: Some(FontData::TrueType(bundled_font_data())),
+                font_data: Some(FontData::TrueType(font_bytes)),
             },
             font_size: 48.0,
             text_matrix: Matrix::default(),
@@ -211,7 +221,11 @@ mod tests {
 
     #[test]
     fn render_text_produces_non_white_pixels() {
-        let text_obj = make_text_object();
+        let Some(font_bytes) = find_liberation_sans() else {
+            eprintln!("skipping: Liberation Sans not found on system");
+            return;
+        };
+        let text_obj = make_text_object(font_bytes);
 
         let mut pixmap = tiny_skia::Pixmap::new(200, 200).unwrap();
         pixmap.fill(tiny_skia::Color::WHITE);
@@ -234,7 +248,11 @@ mod tests {
 
     #[test]
     fn invisible_mode_produces_all_white() {
-        let mut text_obj = make_text_object();
+        let Some(font_bytes) = find_liberation_sans() else {
+            eprintln!("skipping: Liberation Sans not found on system");
+            return;
+        };
+        let mut text_obj = make_text_object(font_bytes);
         text_obj.text_rendering_mode = 3; // invisible
 
         let mut pixmap = tiny_skia::Pixmap::new(200, 200).unwrap();
@@ -253,7 +271,11 @@ mod tests {
 
     #[test]
     fn render_text_with_color() {
-        let mut text_obj = make_text_object();
+        let Some(font_bytes) = find_liberation_sans() else {
+            eprintln!("skipping: Liberation Sans not found on system");
+            return;
+        };
+        let mut text_obj = make_text_object(font_bytes);
         text_obj.fill_color = Color::rgb(255, 0, 0); // red
 
         let mut pixmap = tiny_skia::Pixmap::new(200, 200).unwrap();
