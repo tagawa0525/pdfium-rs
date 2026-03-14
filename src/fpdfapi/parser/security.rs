@@ -247,8 +247,9 @@ fn calc_encrypt_key(
     revision: u32,
     encrypt_metadata: bool,
 ) -> Vec<u8> {
-    // MD5 output is 16 bytes; PDF spec allows key_length 5-16.
-    // Clamp to prevent out-of-bounds access on the digest.
+    // MD5 output is 16 bytes; PDF spec mandates key_length 5-16.
+    // Lower bound is 1 (not 5) to accept malformed input without panicking;
+    // upper bound is 16 to stay within the MD5 digest size.
     let key_length = key_length.clamp(1, 16);
 
     let padded = pad_password(password);
