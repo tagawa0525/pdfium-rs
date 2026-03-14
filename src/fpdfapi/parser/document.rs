@@ -370,6 +370,76 @@ impl<R: Read + Seek> Document<R> {
             .ok_or_else(|| Error::InvalidPdf(format!("page index {n} out of range")))
     }
 
+    /// Return the raw page dictionary for the given zero-based page index.
+    ///
+    /// Used by higher-level modules (e.g. `fpdfdoc`) that need direct access
+    /// to page-level entries like `/Annots` without fully parsing the page.
+    pub(crate) fn page_dict(&mut self, n: u32) -> Result<PdfDictionary> {
+        let pages_num = {
+            let root_id = self
+                .trailer
+                .get(b"Root")
+                .and_then(|o| o.as_reference())
+                .ok_or_else(|| Error::InvalidPdf("trailer missing /Root".into()))?;
+            let root_dict = self
+                .object(root_id.num)?
+                .as_dict()
+                .ok_or_else(|| Error::InvalidPdf("/Root is not a dictionary".into()))?
+                .clone();
+            root_dict
+                .get_reference(b"Pages")
+                .ok_or_else(|| Error::InvalidPdf("/Root missing /Pages".into()))?
+                .num
+        };
+
+        let mut idx = 0u32;
+        self.find_page_dict_in_tree(pages_num, n, &mut idx)?
+            .ok_or_else(|| Error::InvalidPdf(format!("page index {n} out of range")))
+    }
+
+    fn find_page_dict_in_tree(
+        &mut self,
+        node_id: u32,
+        target: u32,
+        idx: &mut u32,
+    ) -> Result<Option<PdfDictionary>> {
+        let dict = self
+            .object(node_id)?
+            .as_dict()
+            .ok_or_else(|| Error::InvalidPdf(format!("page tree node {node_id} is not a dict")))?
+            .clone();
+
+        let node_type = dict.get_name(b"Type").map(|n| n.as_bytes().to_vec());
+
+        match node_type.as_deref() {
+            Some(b"Page") => {
+                if *idx == target {
+                    Ok(Some(dict))
+                } else {
+                    *idx += 1;
+                    Ok(None)
+                }
+            }
+            _ => {
+                let kids: Vec<u32> = dict
+                    .get_array(b"Kids")
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|o| o.as_reference().map(|id| id.num))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+
+                for kid_id in kids {
+                    if let Some(d) = self.find_page_dict_in_tree(kid_id, target, idx)? {
+                        return Ok(Some(d));
+                    }
+                }
+                Ok(None)
+            }
+        }
+    }
+
     /// Recursive page-tree traversal. Returns `Some(Page)` when the target
     /// zero-based index is found, `None` otherwise.
     fn find_page_in_tree(
