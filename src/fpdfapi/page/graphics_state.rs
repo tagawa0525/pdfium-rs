@@ -71,29 +71,33 @@ impl GraphicsState {
     /// the current text position to the new line origin.
     ///
     /// Implements the `Td` operator.
-    pub fn move_text_point(&mut self, _dx: f64, _dy: f64) {
-        todo!()
+    pub fn move_text_point(&mut self, dx: f64, dy: f64) {
+        self.text_line_pos.x += dx as f32;
+        self.text_line_pos.y += dy as f32;
+        self.text_pos = self.text_line_pos;
     }
 
     /// Move to the start of the next line using the current leading.
     ///
     /// Equivalent to `move_text_point(0.0, -text_leading)`. Implements `T*`.
     pub fn move_to_next_line(&mut self) {
-        todo!()
+        self.move_text_point(0.0, -self.text_leading);
     }
 
     /// Set the text matrix and reset both text position and line position to the origin.
     ///
     /// Implements the `Tm` operator.
-    pub fn set_text_matrix(&mut self, _a: f64, _b: f64, _c: f64, _d: f64, _e: f64, _f: f64) {
-        todo!()
+    pub fn set_text_matrix(&mut self, a: f64, b: f64, c: f64, d: f64, e: f64, f: f64) {
+        self.text_matrix = Matrix::new(a as f32, b as f32, c as f32, d as f32, e as f32, f as f32);
+        self.text_pos = Point::default();
+        self.text_line_pos = Point::default();
     }
 
     /// Advance the current text position horizontally by `dx` (in text-matrix space).
     ///
     /// Called after rendering each character glyph.
-    pub fn advance_text_position(&mut self, _dx: f64) {
-        todo!()
+    pub fn advance_text_position(&mut self, dx: f64) {
+        self.text_pos.x += dx as f32;
     }
 }
 
@@ -102,7 +106,6 @@ mod tests {
     use super::*;
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn text_state_default_values() {
         let ts = TextState::default();
         assert_eq!(ts.font_size, 0.0);
@@ -112,7 +115,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn graphics_state_default_values() {
         let gs = GraphicsState::default();
         assert!(gs.ctm.is_identity());
@@ -126,7 +128,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn move_text_point_updates_both_positions() {
         let mut gs = GraphicsState::default();
         gs.move_text_point(10.0, -5.0);
@@ -137,7 +138,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn move_text_point_accumulates() {
         let mut gs = GraphicsState::default();
         gs.move_text_point(10.0, -5.0);
@@ -148,7 +148,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn move_to_next_line_uses_leading() {
         let mut gs = GraphicsState {
             text_leading: 12.0,
@@ -163,7 +162,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn set_text_matrix_resets_positions() {
         let mut gs = GraphicsState {
             text_pos: Point::new(50.0, 100.0),
@@ -178,7 +176,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn advance_text_position_moves_x() {
         let mut gs = GraphicsState::default();
         gs.advance_text_position(15.5);
@@ -187,7 +184,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn advance_text_position_accumulates() {
         let mut gs = GraphicsState::default();
         gs.advance_text_position(10.0);
@@ -196,7 +192,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn graphics_state_clone_is_independent() {
         let mut gs = GraphicsState {
             text_leading: 12.0,

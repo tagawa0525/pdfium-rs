@@ -42,7 +42,6 @@ mod tests {
     use crate::fpdfapi::font::pdf_font::PdfFont;
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn char_entry_fields_accessible() {
         let entry = CharEntry {
             code: 65,
@@ -55,7 +54,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn text_object_fields_accessible() {
         let obj = TextObject {
             char_codes: vec![CharEntry {
@@ -76,7 +74,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn page_object_text_variant() {
         let obj = PageObject::Text(Box::new(TextObject {
             char_codes: vec![],
@@ -91,7 +88,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn page_object_stub_variants() {
         assert!(matches!(PageObject::Path, PageObject::Path));
         assert!(matches!(PageObject::Image, PageObject::Image));
