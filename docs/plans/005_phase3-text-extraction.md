@@ -93,7 +93,7 @@ C++の深い継承ツリーをフラットに。Phase 3では`Simple`（Type1/Tr
 
 **エンコーディングテーブル** (`encoding.rs`):
 
-- `PredefinedEncoding` enum: `WinAnsi`, `MacRoman`, `Standard`, `PDFDoc`, `MacExpert`, `Symbol`, `ZapfDingbats`
+- `PredefinedEncoding` enum: `WinAnsi`, `MacRoman`, `Standard`, `PdfDoc`, `MacExpert`, `Symbol`, `ZapfDingbats`
 - 各エンコーディングの `[u16; 256]` 静的テーブル
 - `unicode_from_char_code(encoding, code: u8) -> Option<char>`
 - `/Differences`配列によるカスタムエンコーディング対応
