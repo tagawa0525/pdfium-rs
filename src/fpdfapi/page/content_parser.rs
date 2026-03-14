@@ -4,6 +4,7 @@ use std::io::{Read, Seek};
 use crate::fpdfapi::font::pdf_font::PdfFont;
 use crate::fpdfapi::page::color_space::{ColorSpace, Components};
 use crate::fpdfapi::page::graphics_state::GraphicsState;
+use crate::fpdfapi::page::image::decode_image_xobject;
 use crate::fpdfapi::page::page_object::{CharEntry, FillRule, PageObject, PathObject, TextObject};
 use crate::fpdfapi::parser::document::Document;
 use crate::fpdfapi::parser::object::{PdfDictionary, PdfObject};
@@ -810,6 +811,13 @@ impl<'a, R: Read + Seek> Parser<'a, R> {
                 self.skip_inline_image();
             }
 
+            // ── XObject invocation ────────────────────────────────────────────
+            b"Do" => {
+                if let Some(Token::Name(name)) = self.stack.pop() {
+                    self.do_xobject(&name);
+                }
+            }
+
             // ── Everything else: silently ignore ─────────────────────────────
             _ => {}
         }
@@ -852,6 +860,49 @@ impl<'a, R: Read + Seek> Parser<'a, R> {
         }
         result.reverse();
         result
+    }
+
+    /// Handle the `Do` operator: look up an XObject by name and process it.
+    fn do_xobject(&mut self, name: &[u8]) {
+        // Resolve the XObject reference from resources
+        let xobj_opt = self
+            .resources
+            .get(b"XObject")
+            .and_then(|o| o.as_dict())
+            .and_then(|d| d.get(name))
+            .cloned();
+
+        let Some(xobj_ref) = xobj_opt else {
+            return;
+        };
+
+        // Resolve indirect reference to a stream
+        let stream_opt = match xobj_ref {
+            PdfObject::Stream(s) => Some((s.dict.clone(), s.data.clone())),
+            PdfObject::Reference(id) => match self.doc.object(id.num) {
+                Ok(PdfObject::Stream(s)) => Some((s.dict.clone(), s.data.clone())),
+                _ => None,
+            },
+            _ => None,
+        };
+
+        let Some((dict, data)) = stream_opt else {
+            return;
+        };
+
+        // Only handle Image XObjects
+        let is_image = dict
+            .get(b"Subtype")
+            .and_then(|o| o.as_name())
+            .map(|n| n.as_bytes() == b"Image")
+            .unwrap_or(false);
+        if !is_image {
+            return;
+        }
+
+        if let Ok(img) = decode_image_xobject(&data, &dict, self.gs.ctm, self.doc) {
+            self.objects.push(PageObject::Image(Box::new(img)));
+        }
     }
 
     /// Load a font by resource name (raw bytes) into `gs.font` and update `bt_font`.
@@ -1339,5 +1390,67 @@ mod tests {
         let stream = b"0 0 100 100 re n";
         let result = parse_content_stream(stream, &PdfDictionary::new(), &mut doc);
         assert!(result.is_empty());
+    }
+
+    /// Build a minimal PDF (objects 1-3) where object 3 is a 2×2 RGB image XObject stream.
+    /// Returns (pdf_bytes, resources_dict).
+    fn minimal_pdf_with_image_xobject() -> (Vec<u8>, PdfDictionary) {
+        // Raw 2×2 RGB pixels: red, green, blue, white
+        let image_data: &[u8] = &[255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 255, 255];
+
+        let mut pdf = Vec::new();
+        pdf.extend_from_slice(b"%PDF-1.4\n");
+        let obj1_off = pdf.len();
+        pdf.extend_from_slice(b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+        let obj2_off = pdf.len();
+        pdf.extend_from_slice(b"2 0 obj\n<< /Type /Pages /Kids [] /Count 0 >>\nendobj\n");
+        let obj3_off = pdf.len();
+        let stream_dict = format!(
+            "<< /Type /XObject /Subtype /Image /Width 2 /Height 2 \
+             /ColorSpace /DeviceRGB /BitsPerComponent 8 /Length {} >>",
+            image_data.len()
+        );
+        pdf.extend_from_slice(b"3 0 obj\n");
+        pdf.extend_from_slice(stream_dict.as_bytes());
+        pdf.extend_from_slice(b"\nstream\n");
+        pdf.extend_from_slice(image_data);
+        pdf.extend_from_slice(b"\nendstream\nendobj\n");
+
+        let xref_off = pdf.len();
+        pdf.extend_from_slice(b"xref\n0 4\n");
+        pdf.extend_from_slice(b"0000000000 65535 f \n");
+        pdf.extend_from_slice(format!("{:010} 00000 n \n", obj1_off).as_bytes());
+        pdf.extend_from_slice(format!("{:010} 00000 n \n", obj2_off).as_bytes());
+        pdf.extend_from_slice(format!("{:010} 00000 n \n", obj3_off).as_bytes());
+        pdf.extend_from_slice(b"trailer\n<< /Size 4 /Root 1 0 R >>\n");
+        pdf.extend_from_slice(format!("startxref\n{xref_off}\n%%EOF\n").as_bytes());
+
+        // Build resources: /XObject << /Im1 3 0 R >>
+        use crate::fpdfapi::parser::object::ObjectId;
+        let mut xobj_map = PdfDictionary::new();
+        xobj_map.set("Im1", PdfObject::Reference(ObjectId::new(3, 0)));
+        let mut resources = PdfDictionary::new();
+        resources.set("XObject", PdfObject::Dictionary(xobj_map));
+
+        (pdf, resources)
+    }
+
+    #[test]
+    fn do_operator_decodes_image_xobject() {
+        let (pdf_bytes, resources) = minimal_pdf_with_image_xobject();
+        let mut doc = Document::from_reader(Cursor::new(pdf_bytes)).unwrap();
+        // Identity CTM, then invoke /Im1 Do
+        let stream = b"1 0 0 1 0 0 cm /Im1 Do";
+        let result = parse_content_stream(stream, &resources, &mut doc);
+        assert_eq!(result.len(), 1);
+        if let PageObject::Image(obj) = &result[0] {
+            assert_eq!(obj.width, 2);
+            assert_eq!(obj.height, 2);
+            assert_eq!(obj.data.len(), 16); // 2×2 × 4 RGBA
+            // First pixel (red): R=255, G=0, B=0, A=255
+            assert_eq!(&obj.data[0..4], &[255, 0, 0, 255]);
+        } else {
+            panic!("expected PageObject::Image, got {:?}", result);
+        }
     }
 }

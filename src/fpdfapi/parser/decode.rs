@@ -117,6 +117,10 @@ fn apply_filter(data: &[u8], filter: &Filter, parms: Option<&PdfDictionary>) -> 
                 .unwrap_or(true);
             lzw::decode(data, early_change)
         }
+        Filter::DCTDecode => {
+            let decoded = crate::fxcodec::jpeg::decode(data)?;
+            Ok(decoded.pixels)
+        }
     }
 }
 
@@ -161,6 +165,7 @@ enum Filter {
     ASCII85Decode,
     FlateDecode,
     LZWDecode,
+    DCTDecode,
 }
 
 impl Filter {
@@ -170,6 +175,7 @@ impl Filter {
             b"ASCII85Decode" | b"A85" => Some(Filter::ASCII85Decode),
             b"FlateDecode" | b"Fl" => Some(Filter::FlateDecode),
             b"LZWDecode" | b"LZW" => Some(Filter::LZWDecode),
+            b"DCTDecode" | b"DCT" => Some(Filter::DCTDecode),
             _ => None,
         }
     }
@@ -274,6 +280,15 @@ mod tests {
         let dict = dict_with_filter(b"RunLengthDecode");
         let result = decode_stream(data, &dict);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn decode_dct_gray_1x1() {
+        const GRAY_1X1_JPEG: &[u8] = include_bytes!("../../../tests/fixtures/gray_1x1.jpg");
+        let dict = dict_with_filter(b"DCTDecode");
+        let result = decode_stream(GRAY_1X1_JPEG, &dict).unwrap();
+        assert_eq!(result.len(), 1); // 1 grayscale byte for 1×1
+        assert!(result[0] > 200, "expected white pixel, got {}", result[0]);
     }
 
     #[test]

@@ -3,6 +3,7 @@ use crate::fxcrt::coordinates::{Matrix, Point};
 use crate::fxge::color::{Color, LineCap, LineJoin};
 
 /// A single character entry within a text object.
+#[derive(Debug)]
 pub struct CharEntry {
     /// Raw character code (single-byte for Simple fonts, multi-byte for CID fonts).
     pub code: u32,
@@ -13,6 +14,7 @@ pub struct CharEntry {
 }
 
 /// A text object extracted from a content stream (`BT` … `ET` block).
+#[derive(Debug)]
 pub struct TextObject {
     /// Character entries in rendering order (each entry is a full glyph record).
     pub char_entries: Vec<CharEntry>,
@@ -39,6 +41,7 @@ pub enum FillRule {
 }
 
 /// A path object with painting attributes.
+#[derive(Debug)]
 pub struct PathObject {
     pub path: crate::fxge::path::Path,
     pub fill_rule: FillRule,
@@ -55,6 +58,7 @@ pub struct PathObject {
 }
 
 /// An image object with decoded pixel data.
+#[derive(Debug)]
 pub struct ImageObject {
     /// Decoded RGBA pixels.
     pub data: Vec<u8>,
@@ -64,6 +68,7 @@ pub struct ImageObject {
 }
 
 /// A page content object.
+#[derive(Debug)]
 pub enum PageObject {
     Text(Box<TextObject>),
     /// Path objects (lines, curves, rectangles).
