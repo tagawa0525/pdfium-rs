@@ -1,6 +1,7 @@
 use crate::fpdfapi::font::font_file::FontData;
 use crate::fpdfapi::font::glyph;
 use crate::fpdfapi::font::pdf_font::PdfFont;
+use crate::fpdfapi::font::standard_fonts;
 use crate::fpdfapi::page::page_object::TextObject;
 use crate::fxge::color::Color;
 
@@ -48,6 +49,9 @@ pub fn render_text(
         // Transform: page_to_device × translate(origin) × shape × scale(fontSize/upm)
         // TrueType glyphs are Y-up; page_to_device flips Y.
         let glyph_scale = font_size / upm;
+        // page_to_device already flips Y (PDF Y-up → device Y-down).
+        // TrueType glyphs are also Y-up, so the flip from page_to_device
+        // naturally inverts them into device space. No additional Y-negate needed.
         let glyph_transform = page_to_device
             .pre_concat(tiny_skia::Transform::from_translate(
                 entry.origin.x,
@@ -56,7 +60,7 @@ pub fn render_text(
             .pre_concat(tiny_skia::Transform::from_row(
                 shape.a, shape.b, shape.c, shape.d, 0.0, 0.0,
             ))
-            .pre_concat(tiny_skia::Transform::from_scale(glyph_scale, -glyph_scale));
+            .pre_concat(tiny_skia::Transform::from_scale(glyph_scale, glyph_scale));
 
         if should_fill {
             let mut paint = tiny_skia::Paint::default();
@@ -84,18 +88,23 @@ pub fn render_text(
     }
 }
 
-/// Get font file bytes from a PdfFont, either from embedded data or None.
+/// Get font file bytes from a PdfFont: embedded data first, then standard font fallback.
 fn resolve_font_data(font: &PdfFont) -> Option<&[u8]> {
-    match font {
-        PdfFont::Simple {
-            font_data: Some(data),
-            ..
-        } => match data {
-            FontData::TrueType(bytes) | FontData::OpenType(bytes) => Some(bytes),
-            FontData::Type1(_) => None, // ttf-parser doesn't handle PFB
-        },
-        _ => None,
+    if let PdfFont::Simple {
+        font_data: Some(data),
+        ..
+    } = font
+    {
+        match data {
+            FontData::TrueType(bytes) | FontData::OpenType(bytes) => return Some(bytes),
+            FontData::Type1(_) => {} // ttf-parser doesn't handle PFB; fall through
+        }
     }
+    // Fallback to standard 14 font
+    let base_font = match font {
+        PdfFont::Simple { base_font, .. } | PdfFont::Unsupported { base_font } => base_font,
+    };
+    standard_fonts::standard_font_data(base_font)
 }
 
 /// Resolve a character code to a glyph ID using the font's encoding and cmap.
