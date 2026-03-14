@@ -83,7 +83,7 @@ C++の深い継承ツリーをフラットに。Phase 3では`Simple`（Type1/Tr
 
 - `PdfDictionary::get_f64(key) -> Option<f64>` — Integer/Realをf64として取得
 - `PdfDictionary::get_reference(key) -> Option<ObjectId>` — Reference取得
-- `Document::resolve(obj: &PdfObject) -> Result<&PdfObject>` — Referenceを辿って実体を返す
+- `Document::resolve(&mut self, obj: &PdfObject) -> Result<&PdfObject>` — Referenceを辿って実体を返す
 
 **ファイル**: `src/fpdfapi/parser/object.rs`, `src/fpdfapi/parser/document.rs`
 
