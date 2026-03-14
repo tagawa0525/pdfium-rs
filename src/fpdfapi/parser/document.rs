@@ -269,6 +269,15 @@ impl<R: Read + Seek> Document<R> {
     /// otherwise clone and return the object itself.
     ///
     /// Returns an error if the referenced object does not exist.
+    ///
+    /// # Note on generation numbers
+    ///
+    /// This method (like [`Document::object`]) resolves references by object number only.
+    /// Generation numbers (`ObjectId::gen_num`) are currently ignored because the internal
+    /// object store is keyed solely on `obj_num`. This is safe for the vast majority of
+    /// PDFs, which use generation number 0 throughout. Non-zero generation numbers
+    /// (used only after in-place object replacement, a rare feature) are not validated
+    /// against the cross-reference table.
     pub fn resolve(&mut self, obj: &PdfObject) -> Result<PdfObject> {
         match obj {
             PdfObject::Reference(id) => self.object(id.num).cloned(),
