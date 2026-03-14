@@ -1,6 +1,6 @@
 # Phase 3: テキスト抽出
 
-Status: **IN PROGRESS** — Step 6/8 完了
+Status: **IN PROGRESS** — Step 7/8 完了
 
 ## Context
 
@@ -235,7 +235,7 @@ pub struct Page {
 
 **ファイル**: `src/fpdfapi/page/page.rs`, `src/fpdfapi/parser/document.rs`
 
-### Step 7: テキスト抽出 (TextPage)
+### Step 7: テキスト抽出 (TextPage) ✅
 
 ページオブジェクトからテキストを読み順に抽出。
 
