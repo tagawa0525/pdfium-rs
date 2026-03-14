@@ -141,23 +141,70 @@ fn dashed_lines_render_dimensions() {
 
 /// Verify pixels on the solid lines are dark (black or near-black with anti-aliasing).
 /// PDF y=25 → device y=75, PDF y=75 → device y=25.
-/// Due to anti-aliasing, exact black (0,0,0) may not appear; check for dark pixels.
+///
+/// A single-pixel probe at the exact centerline can miss due to rasterization rounding
+/// or anti-aliasing. Instead, scan a ±1 neighbourhood for at least one dark pixel.
+fn has_dark_pixel_near(bmp: &Bitmap, cx: u32, cy: u32) -> bool {
+    let lo_x = cx.saturating_sub(1);
+    let lo_y = cy.saturating_sub(1);
+    let hi_x = (cx + 1).min(bmp.width - 1);
+    let hi_y = (cy + 1).min(bmp.height - 1);
+    for y in lo_y..=hi_y {
+        for x in lo_x..=hi_x {
+            if bmp
+                .pixel_at(x, y)
+                .is_some_and(|p| p.r < 200 && p.g < 200 && p.b < 200)
+            {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 #[test]
 fn dashed_lines_solid_line_pixels() {
     let bmp = render_fixture("dashed_lines.pdf", 72.0);
     // Solid line at device y=75 (PDF y=25), x=100 (center of line)
-    let p = bmp.pixel_at(100, 75).unwrap();
-    // Line should be dark (not white); anti-aliasing may give ~50% gray
     assert!(
-        p.r < 200 && p.g < 200 && p.b < 200,
-        "solid line should be dark"
+        has_dark_pixel_near(&bmp, 100, 75),
+        "solid line at y≈75 should have a dark pixel"
     );
-
     // Solid line at device y=25 (PDF y=75), x=100
-    let p = bmp.pixel_at(100, 25).unwrap();
     assert!(
-        p.r < 200 && p.g < 200 && p.b < 200,
-        "second solid line should be dark"
+        has_dark_pixel_near(&bmp, 100, 25),
+        "solid line at y≈25 should have a dark pixel"
+    );
+}
+
+/// Verify the dashed line (PDF y=50, device y=50) actually renders with gaps.
+/// With dash pattern [6 5 4 3 2 1] and phase 5, the line should have alternating
+/// dark (ink) and white (gap) pixels — not a fully solid black line.
+/// Scan from x=10 to x=190 and assert both dark pixels and white pixels exist.
+#[test]
+fn dashed_line_has_gaps() {
+    let bmp = render_fixture("dashed_lines.pdf", 72.0);
+    let device_y = 50u32; // PDF y=50 → device y = 100-50 = 50
+    let mut dark_count = 0u32;
+    let mut white_count = 0u32;
+    for x in 10u32..190 {
+        // Check the pixel and its immediate neighbours for robustness
+        let is_dark = (device_y.saturating_sub(1)..=(device_y + 1).min(bmp.height - 1))
+            .filter_map(|y| bmp.pixel_at(x, y))
+            .any(|p| p.r < 200 && p.g < 200 && p.b < 200);
+        if is_dark {
+            dark_count += 1;
+        } else {
+            white_count += 1;
+        }
+    }
+    assert!(
+        dark_count > 0,
+        "dashed line should have at least one dark pixel"
+    );
+    assert!(
+        white_count > 0,
+        "dashed line should have at least one gap (white pixel)"
     );
 }
 
