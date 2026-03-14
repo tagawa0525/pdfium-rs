@@ -153,6 +153,11 @@ impl<R: Read + Seek> Document<R> {
 
             let ed = encrypt_dict::parse_encrypt_dict(encrypt_pdf_dict)?;
             let file_id = encrypt_dict::extract_file_id(&xref.trailer);
+            if file_id.is_empty() {
+                return Err(Error::InvalidPdf(
+                    "encrypted PDF requires /ID in trailer".into(),
+                ));
+            }
             let handler = SecurityHandler::new(&ed, &file_id, password)?;
             Some(handler)
         } else {
