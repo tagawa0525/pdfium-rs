@@ -5,4 +5,6 @@ pub mod fpdftext;
 pub mod fxcodec;
 pub mod fxcrt;
 
+pub use fpdfapi::page::pdf_page::Page;
 pub use fpdfapi::parser::document::Document;
+pub use fpdftext::{CharInfo, FindOptions, TextFind, TextMatch};
