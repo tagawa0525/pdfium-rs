@@ -2,6 +2,7 @@ use std::io::{Read, Seek};
 
 use crate::error::Result;
 use crate::fpdfapi::font::encoding::{CustomEncoding, FontEncoding, PredefinedEncoding};
+use crate::fpdfapi::font::font_file::FontData;
 use crate::fpdfapi::font::to_unicode::ToUnicodeMap;
 use crate::fpdfapi::parser::document::Document;
 use crate::fpdfapi::parser::object::{PdfDictionary, PdfObject};
@@ -18,6 +19,8 @@ pub enum PdfFont {
         /// Character widths in 1/1000 of text-space units, starting at `first_char`.
         widths: Vec<f64>,
         to_unicode: Option<ToUnicodeMap>,
+        /// Embedded font file data extracted from FontDescriptor, if available.
+        font_data: Option<FontData>,
     },
     /// CIDFont (Type0), Type3, or any subtype not yet supported.
     Unsupported { base_font: String },
@@ -58,12 +61,15 @@ impl PdfFont {
             None
         };
 
+        let font_data = load_font_data(font_dict, doc);
+
         Ok(PdfFont::Simple {
             base_font,
             encoding,
             first_char,
             widths,
             to_unicode,
+            font_data,
         })
     }
 
@@ -120,6 +126,48 @@ impl PdfFont {
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
+
+/// Extract embedded font file data from a FontDescriptor dictionary.
+///
+/// Tries `/FontFile2` (TrueType), `/FontFile3` (OpenType/CFF), then `/FontFile` (Type1 PFB)
+/// in that order. Returns `None` if no FontDescriptor or no embedded font file.
+fn load_font_data<R: Read + Seek>(
+    font_dict: &PdfDictionary,
+    doc: &mut Document<R>,
+) -> Option<FontData> {
+    // FontDescriptor can be inline or an indirect reference
+    let fd = match font_dict.get(b"FontDescriptor") {
+        Some(PdfObject::Dictionary(d)) => d.clone(),
+        Some(PdfObject::Reference(id)) => doc.object(id.num).ok()?.as_dict()?.clone(),
+        _ => return None,
+    };
+
+    // Try /FontFile2 (TrueType)
+    if let Some(data) = resolve_font_stream(&fd, b"FontFile2", doc) {
+        return Some(FontData::TrueType(data));
+    }
+    // Try /FontFile3 (OpenType/CFF)
+    if let Some(data) = resolve_font_stream(&fd, b"FontFile3", doc) {
+        return Some(FontData::OpenType(data));
+    }
+    // Try /FontFile (Type1 PFB)
+    if let Some(data) = resolve_font_stream(&fd, b"FontFile", doc) {
+        return Some(FontData::Type1(data));
+    }
+
+    None
+}
+
+/// Resolve a font file stream reference from a FontDescriptor dictionary.
+fn resolve_font_stream<R: Read + Seek>(
+    fd: &PdfDictionary,
+    key: &[u8],
+    doc: &mut Document<R>,
+) -> Option<Vec<u8>> {
+    let id = fd.get_reference(key)?;
+    let stream = doc.object(id.num).ok()?.as_stream()?.clone();
+    doc.decode_stream(&stream, id.num, id.gen_num).ok()
+}
 
 /// Parse the glyph name → char mapping for `/Differences` entries.
 ///
@@ -600,5 +648,82 @@ mod tests {
             enc,
             FontEncoding::Predefined(PredefinedEncoding::Standard)
         ));
+    }
+
+    // -----------------------------------------------------------------------
+    // font_data extraction tests
+    // -----------------------------------------------------------------------
+
+    /// Build a PDF with a FontDescriptor (obj 3) pointing to a FontFile2 stream (obj 4).
+    fn pdf_with_font_file2() -> Vec<u8> {
+        // Fake TrueType data (not a real font, just test bytes)
+        let font_bytes = b"FAKE_TRUETYPE_DATA_FOR_TEST";
+
+        let mut pdf = Vec::new();
+        pdf.extend_from_slice(b"%PDF-1.4\n");
+
+        let obj1_off = pdf.len();
+        pdf.extend_from_slice(b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+
+        let obj2_off = pdf.len();
+        pdf.extend_from_slice(b"2 0 obj\n<< /Type /Pages /Kids [] /Count 0 >>\nendobj\n");
+
+        // FontDescriptor referencing FontFile2 at obj 4
+        let obj3_off = pdf.len();
+        pdf.extend_from_slice(
+            b"3 0 obj\n<< /Type /FontDescriptor /FontName /TestFont /FontFile2 4 0 R >>\nendobj\n",
+        );
+
+        // FontFile2 stream
+        let obj4_off = pdf.len();
+        let stream_header = format!("4 0 obj\n<< /Length {} >>\nstream\n", font_bytes.len());
+        pdf.extend_from_slice(stream_header.as_bytes());
+        pdf.extend_from_slice(font_bytes);
+        pdf.extend_from_slice(b"\nendstream\nendobj\n");
+
+        let xref_off = pdf.len();
+        pdf.extend_from_slice(b"xref\n0 5\n");
+        pdf.extend_from_slice(b"0000000000 65535 f \n");
+        pdf.extend_from_slice(format!("{:010} 00000 n \n", obj1_off).as_bytes());
+        pdf.extend_from_slice(format!("{:010} 00000 n \n", obj2_off).as_bytes());
+        pdf.extend_from_slice(format!("{:010} 00000 n \n", obj3_off).as_bytes());
+        pdf.extend_from_slice(format!("{:010} 00000 n \n", obj4_off).as_bytes());
+        pdf.extend_from_slice(b"trailer\n<< /Size 5 /Root 1 0 R >>\n");
+        pdf.extend_from_slice(format!("startxref\n{xref_off}\n%%EOF\n").as_bytes());
+        pdf
+    }
+
+    #[test]
+    fn font_with_font_file2_extracts_truetype_data() {
+        let pdf_bytes = pdf_with_font_file2();
+        let mut doc = Document::from_reader(Cursor::new(pdf_bytes)).unwrap();
+        let mut d = type1_winansi_dict();
+        // Override subtype to TrueType
+        d.set("Subtype", PdfObject::Name(PdfByteString::from("TrueType")));
+        d.set(
+            "FontDescriptor",
+            PdfObject::Reference(crate::fpdfapi::parser::object::ObjectId::new(3, 0)),
+        );
+        let font = PdfFont::load(&d, &mut doc).unwrap();
+        if let PdfFont::Simple { font_data, .. } = &font {
+            assert!(font_data.is_some());
+            assert!(matches!(font_data.as_ref().unwrap(), FontData::TrueType(_)));
+            if let Some(FontData::TrueType(data)) = font_data {
+                assert_eq!(data, b"FAKE_TRUETYPE_DATA_FOR_TEST");
+            }
+        } else {
+            panic!("expected PdfFont::Simple");
+        }
+    }
+
+    #[test]
+    fn font_without_font_descriptor_has_no_font_data() {
+        let mut doc = Document::from_reader(Cursor::new(minimal_pdf())).unwrap();
+        let font = PdfFont::load(&type1_winansi_dict(), &mut doc).unwrap();
+        if let PdfFont::Simple { font_data, .. } = &font {
+            assert!(font_data.is_none());
+        } else {
+            panic!("expected PdfFont::Simple");
+        }
     }
 }
