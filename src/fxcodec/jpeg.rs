@@ -14,7 +14,12 @@ pub fn decode(data: &[u8]) -> Result<DecodedJpeg> {
         .ok_or_else(|| Error::InvalidPdf("JPEG: no info after decode".into()))?;
 
     let color_space = match info.pixel_format {
-        jpeg_decoder::PixelFormat::L8 | jpeg_decoder::PixelFormat::L16 => JpegColorSpace::Grayscale,
+        jpeg_decoder::PixelFormat::L8 => JpegColorSpace::Grayscale,
+        jpeg_decoder::PixelFormat::L16 => {
+            return Err(Error::InvalidPdf(
+                "JPEG: 16-bit grayscale (L16) is not supported".into(),
+            ));
+        }
         jpeg_decoder::PixelFormat::RGB24 => JpegColorSpace::Rgb,
         jpeg_decoder::PixelFormat::CMYK32 => JpegColorSpace::Cmyk,
     };
