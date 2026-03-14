@@ -243,8 +243,8 @@ pub struct Page {
 
 ```rust
 pub struct TextPage {
-    pub chars: Vec<CharInfo>,
-    pub text: String,
+    chars: Vec<CharInfo>,   // アクセサ経由で公開
+    text: String,           // アクセサ経由で公開
 }
 
 pub struct CharInfo {
@@ -264,12 +264,12 @@ pub struct CharInfo {
 5. **改行検出**: Y座標が `font_size * 0.5` 以上変化したら改行挿入
 6. 結果を `chars` と `text` に蓄積
 
-**API**:
+**API**（フィールドは非公開、アクセサ経由で公開）:
 
 - `TextPage::build(page: &Page) -> TextPage`
-- `text_page.text()` → 全テキスト
-- `text_page.char_count()` → 文字数
-- `text_page.char_info(index)` → 位置情報
+- `text_page.text() -> &str` → 全テキスト
+- `text_page.char_count() -> usize` → 文字数
+- `text_page.char_info(index: usize) -> Option<&CharInfo>` → 位置情報
 
 **Page統合**:
 
