@@ -12,6 +12,9 @@ pub enum Error {
     /// Unsupported PDF feature.
     #[error("unsupported: {0}")]
     Unsupported(String),
+    /// Encoding/rendering operation failed.
+    #[error("encoding error: {0}")]
+    Encoding(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

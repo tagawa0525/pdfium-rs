@@ -9,4 +9,5 @@ cbc = { version = "0.1.2", features = ["alloc"] }
 flate2 = "1.1.9"
 md-5 = "0.10.6"
 sha2 = "0.10.9"
+png = "0.17"
 thiserror = "2.0.18"

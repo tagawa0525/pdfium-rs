@@ -69,9 +69,11 @@ Phase 3以降: 必要に応じて`thiserror`構造化enumに移行。core → `E
 2. `/gh-actions-check` でCopilotレビューワークフローが `completed/success` になるまで待つ
 3. `/gh-pr-review` でコメント確認・対応
 4. **レビュー修正は独立した `fix(<scope>):` コミットで積む（RED/GREENに混入させない）**
-5. push後の再レビューサイクルも完了を確認（同じ手順を繰り返す）
-6. `docs/plans/` の進捗ステータスを更新する（`docs:` コミット）
-7. 全チェック通過後 `/gh-pr-merge --merge`
+5. `docs/plans/` の進捗ステータスを更新する（`docs:` コミット）
+6. 全チェック通過後 `/gh-pr-merge --merge`
+
+> **Note**: Copilot code review はPR作成時に1回のみ実行される（push時の再レビューなし）。
+> レビュー指摘への修正後は再レビューを待たずにマージして良い。
 
 ### PRやり直し時
 
