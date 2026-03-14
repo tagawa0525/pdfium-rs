@@ -5,8 +5,10 @@ use crate::fpdfapi::parser::security::{Cipher, EncryptDict};
 /// Parse an `EncryptDict` from a PDF `/Encrypt` dictionary.
 ///
 /// Reads `/Filter`, `/V`, `/R`, `/Length`, `/O`, `/U`, `/P`, `/CF`,
-/// `/StmF`, `/StrF`, `/EncryptMetadata`, and R5+ entries
-/// (`/OE`, `/UE`, `/Perms`).
+/// `/EncryptMetadata`, and R5+ entries (`/OE`, `/UE`, `/Perms`).
+///
+/// Note: `/StmF` and `/StrF` are not yet read; the cipher is determined
+/// solely from `/V` and `/CF`→`/StdCF`→`/CFM`.
 pub fn parse_encrypt_dict(dict: &PdfDictionary) -> Result<EncryptDict> {
     // /Filter must be /Standard
     let filter = dict
