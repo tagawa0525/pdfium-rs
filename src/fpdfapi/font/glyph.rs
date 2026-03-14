@@ -73,68 +73,32 @@ impl ttf_parser::OutlineBuilder for PathCollector {
 mod tests {
     use super::*;
 
-    /// Get a known system font for testing. Liberation Sans is commonly available.
-    /// Falls back to returning None if not found.
-    fn test_font_data() -> Option<Vec<u8>> {
-        let paths = [
-            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-            "/usr/share/fonts/liberation-sans/LiberationSans-Regular.ttf",
-            "/usr/share/fonts/TTF/LiberationSans-Regular.ttf",
-            "/nix/store",
-        ];
-
-        for path in &paths[..3] {
-            if let Ok(data) = std::fs::read(path) {
-                return Some(data);
-            }
-        }
-
-        // Try finding via nix store glob
-        if let Ok(entries) = std::fs::read_dir("/nix/store") {
-            for entry in entries.flatten() {
-                let p = entry.path();
-                let candidate = p.join("share/fonts/truetype/LiberationSans-Regular.ttf");
-                if candidate.exists()
-                    && let Ok(data) = std::fs::read(&candidate)
-                {
-                    return Some(data);
-                }
-            }
-        }
-
-        None
+    /// Use the bundled Liberation Sans font for deterministic tests.
+    fn test_font_data() -> &'static [u8] {
+        include_bytes!("../../../assets/fonts/LiberationSans-Regular.ttf")
     }
 
     #[test]
     fn glyph_outline_returns_path_for_letter_a() {
-        let Some(font_data) = test_font_data() else {
-            eprintln!("skipping test: no test font found");
-            return;
-        };
-        let gid = char_to_glyph_id(&font_data, 'A').expect("should map 'A'");
-        let path = glyph_outline(&font_data, gid);
+        let font_data = test_font_data();
+        let gid = char_to_glyph_id(font_data, 'A').expect("should map 'A'");
+        let path = glyph_outline(font_data, gid);
         assert!(path.is_some(), "'A' should have an outline");
     }
 
     #[test]
     fn units_per_em_returns_expected_value() {
-        let Some(font_data) = test_font_data() else {
-            eprintln!("skipping test: no test font found");
-            return;
-        };
-        let upm = units_per_em(&font_data).expect("should have units_per_em");
+        let font_data = test_font_data();
+        let upm = units_per_em(font_data).expect("should have units_per_em");
         // Liberation Sans has upm of 2048
-        assert!(upm > 0, "units_per_em should be positive");
+        assert_eq!(upm, 2048);
     }
 
     #[test]
     fn space_has_no_outline() {
-        let Some(font_data) = test_font_data() else {
-            eprintln!("skipping test: no test font found");
-            return;
-        };
-        let gid = char_to_glyph_id(&font_data, ' ').expect("should map space");
-        let path = glyph_outline(&font_data, gid);
+        let font_data = test_font_data();
+        let gid = char_to_glyph_id(font_data, ' ').expect("should map space");
+        let path = glyph_outline(font_data, gid);
         assert!(path.is_none(), "space should have no outline");
     }
 

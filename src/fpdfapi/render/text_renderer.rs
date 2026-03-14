@@ -160,34 +160,12 @@ mod tests {
     use crate::fxcrt::coordinates::{Matrix, Point};
     use crate::fxge::color::Color;
 
-    fn test_font_data() -> Option<Vec<u8>> {
-        let paths = [
-            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-            "/usr/share/fonts/liberation-sans/LiberationSans-Regular.ttf",
-            "/usr/share/fonts/TTF/LiberationSans-Regular.ttf",
-        ];
-        for path in &paths {
-            if let Ok(data) = std::fs::read(path) {
-                return Some(data);
-            }
-        }
-        // Try nix store
-        if let Ok(entries) = std::fs::read_dir("/nix/store") {
-            for entry in entries.flatten() {
-                let candidate = entry
-                    .path()
-                    .join("share/fonts/truetype/LiberationSans-Regular.ttf");
-                if candidate.exists()
-                    && let Ok(data) = std::fs::read(&candidate)
-                {
-                    return Some(data);
-                }
-            }
-        }
-        None
+    /// Use the bundled Liberation Sans font for deterministic tests.
+    fn bundled_font_data() -> Vec<u8> {
+        include_bytes!("../../../assets/fonts/LiberationSans-Regular.ttf").to_vec()
     }
 
-    fn make_text_object(font_data_bytes: Vec<u8>) -> TextObject {
+    fn make_text_object() -> TextObject {
         use crate::fpdfapi::font::encoding::{FontEncoding, PredefinedEncoding};
         TextObject {
             char_entries: vec![CharEntry {
@@ -201,7 +179,7 @@ mod tests {
                 first_char: 0,
                 widths: vec![],
                 to_unicode: None,
-                font_data: Some(FontData::TrueType(font_data_bytes)),
+                font_data: Some(FontData::TrueType(bundled_font_data())),
             },
             font_size: 48.0,
             text_matrix: Matrix::default(),
@@ -214,11 +192,7 @@ mod tests {
 
     #[test]
     fn render_text_produces_non_white_pixels() {
-        let Some(font_data_bytes) = test_font_data() else {
-            eprintln!("skipping test: no test font found");
-            return;
-        };
-        let text_obj = make_text_object(font_data_bytes);
+        let text_obj = make_text_object();
 
         let mut pixmap = tiny_skia::Pixmap::new(200, 200).unwrap();
         pixmap.fill(tiny_skia::Color::WHITE);
@@ -241,11 +215,7 @@ mod tests {
 
     #[test]
     fn invisible_mode_produces_all_white() {
-        let Some(font_data_bytes) = test_font_data() else {
-            eprintln!("skipping test: no test font found");
-            return;
-        };
-        let mut text_obj = make_text_object(font_data_bytes);
+        let mut text_obj = make_text_object();
         text_obj.text_rendering_mode = 3; // invisible
 
         let mut pixmap = tiny_skia::Pixmap::new(200, 200).unwrap();
@@ -264,11 +234,7 @@ mod tests {
 
     #[test]
     fn render_text_with_color() {
-        let Some(font_data_bytes) = test_font_data() else {
-            eprintln!("skipping test: no test font found");
-            return;
-        };
-        let mut text_obj = make_text_object(font_data_bytes);
+        let mut text_obj = make_text_object();
         text_obj.fill_color = Color::rgb(255, 0, 0); // red
 
         let mut pixmap = tiny_skia::Pixmap::new(200, 200).unwrap();
