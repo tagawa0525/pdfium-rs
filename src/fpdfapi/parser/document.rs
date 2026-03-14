@@ -265,6 +265,14 @@ impl<R: Read + Seek> Document<R> {
         &self.trailer
     }
 
+    /// Resolve a `PdfObject`: if it is a `Reference`, follow it to the stored object;
+    /// otherwise clone and return the object itself.
+    ///
+    /// Returns an error if the referenced object does not exist.
+    pub fn resolve(&mut self, obj: &PdfObject) -> Result<PdfObject> {
+        todo!()
+    }
+
     /// Get the root (catalog) dictionary.
     pub fn catalog(&mut self) -> Result<&PdfDictionary> {
         let root_ref = self
@@ -373,6 +381,47 @@ mod tests {
         let mut doc = Document::from_reader(Cursor::new(data)).unwrap();
         let catalog = doc.catalog().unwrap();
         assert_eq!(catalog.get_name(b"Type").unwrap().as_bytes(), b"Catalog");
+    }
+
+    // --- Document::resolve ---
+
+    #[test]
+    #[ignore = "not yet implemented"]
+    fn resolve_direct_object_returns_itself() {
+        let data = minimal_pdf();
+        let mut doc = Document::from_reader(Cursor::new(data)).unwrap();
+        let obj = PdfObject::Integer(42);
+        let resolved = doc.resolve(&obj).unwrap();
+        assert_eq!(resolved, PdfObject::Integer(42));
+    }
+
+    #[test]
+    #[ignore = "not yet implemented"]
+    fn resolve_reference_follows_to_stored_object() {
+        let data = minimal_pdf();
+        let mut doc = Document::from_reader(Cursor::new(data)).unwrap();
+        // Object 1 is the Catalog dictionary
+        let obj_ref = PdfObject::Reference(crate::fpdfapi::parser::object::ObjectId::new(1, 0));
+        let resolved = doc.resolve(&obj_ref).unwrap();
+        assert!(resolved.as_dict().is_some());
+        assert_eq!(
+            resolved
+                .as_dict()
+                .unwrap()
+                .get_name(b"Type")
+                .unwrap()
+                .as_bytes(),
+            b"Catalog"
+        );
+    }
+
+    #[test]
+    #[ignore = "not yet implemented"]
+    fn resolve_reference_to_missing_object_is_error() {
+        let data = minimal_pdf();
+        let mut doc = Document::from_reader(Cursor::new(data)).unwrap();
+        let obj_ref = PdfObject::Reference(crate::fpdfapi::parser::object::ObjectId::new(999, 0));
+        assert!(doc.resolve(&obj_ref).is_err());
     }
 
     // --- Encryption integration tests ---
