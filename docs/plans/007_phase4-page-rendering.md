@@ -296,6 +296,6 @@ Step 7 (統合テスト) ← Step 6 に依存
 | 2    | ColorSpace                     | 完了       |
 | 3    | GraphicsState + PageObject     | 完了       |
 | 4    | コンテントパーサ拡張           | 完了       |
-| 5    | JPEG + 画像XObject             | PR #37     |
-| 6    | レンダリングパイプライン       | 未着手     |
+| 5    | JPEG + 画像XObject             | 完了       |
+| 6    | レンダリングパイプライン       | PR中       |
 | 7    | 統合テスト + CLI               | 未着手     |

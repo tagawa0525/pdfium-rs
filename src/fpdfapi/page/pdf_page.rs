@@ -1,6 +1,8 @@
+use crate::error::Result;
 use crate::fpdftext::text_find::{FindOptions, TextFind, TextMatch};
 use crate::fpdftext::text_page::TextPage;
 use crate::fxcrt::coordinates::Rect;
+use crate::fxge::dib::Bitmap;
 
 use super::page_object::PageObject;
 
@@ -24,6 +26,11 @@ impl Page {
     /// newlines are inserted based on glyph positions.
     pub fn extract_text(&self) -> String {
         TextPage::build(self).text().to_string()
+    }
+
+    /// Render this page to an RGBA bitmap at the given DPI.
+    pub fn render(&self, dpi: f32) -> Result<Bitmap> {
+        crate::fpdfapi::render::render(self, dpi)
     }
 
     /// Find all occurrences of `query` in this page (case-insensitive by default).
