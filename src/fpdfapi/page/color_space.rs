@@ -3,7 +3,7 @@ use crate::fxge::color::Color;
 /// PDF color space (PDF spec §8.6).
 ///
 /// ICCBased/CalGray/CalRGB are approximated as their Device equivalents.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ColorSpace {
     DeviceGray,
     DeviceRGB,
@@ -11,6 +11,15 @@ pub enum ColorSpace {
 }
 
 impl ColorSpace {
+    /// Number of components for this color space.
+    pub fn num_components(&self) -> usize {
+        match self {
+            ColorSpace::DeviceGray => 1,
+            ColorSpace::DeviceRGB => 3,
+            ColorSpace::DeviceCMYK => 4,
+        }
+    }
+
     /// Convert color components to an RGBA `Color`.
     ///
     /// The number of components must match the color space:
@@ -18,6 +27,7 @@ impl ColorSpace {
     /// - DeviceRGB: 3 components
     /// - DeviceCMYK: 4 components
     ///
+    /// All components are clamped to [0.0, 1.0].
     /// Returns `None` if the component count is wrong.
     pub fn to_color(&self, components: &[f32]) -> Option<Color> {
         match self {
@@ -40,19 +50,56 @@ impl ColorSpace {
                 let [c, m, y, k] = components else {
                     return None;
                 };
-                Some(Color::from_cmyk(*c, *m, *y, *k))
+                Some(Color::from_cmyk(
+                    c.clamp(0.0, 1.0),
+                    m.clamp(0.0, 1.0),
+                    y.clamp(0.0, 1.0),
+                    k.clamp(0.0, 1.0),
+                ))
             }
         }
     }
 }
 
+/// Fixed-capacity buffer for color components (max 4: CMYK).
+#[derive(Debug, Clone, Copy)]
+pub struct Components {
+    values: [f32; 4],
+    len: u8,
+}
+
+impl Components {
+    pub fn new(src: &[f32]) -> Self {
+        let len = src.len().min(4);
+        let mut values = [0.0f32; 4];
+        values[..len].copy_from_slice(&src[..len]);
+        Components {
+            values,
+            len: len as u8,
+        }
+    }
+
+    pub fn as_slice(&self) -> &[f32] {
+        &self.values[..self.len as usize]
+    }
+}
+
+impl Default for Components {
+    fn default() -> Self {
+        Components {
+            values: [0.0; 4],
+            len: 1,
+        }
+    }
+}
+
 /// Tracks fill and stroke color state for the graphics state stack.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct ColorState {
     pub fill_color_space: ColorSpace,
-    pub fill_components: Vec<f32>,
+    pub fill_components: Components,
     pub stroke_color_space: ColorSpace,
-    pub stroke_components: Vec<f32>,
+    pub stroke_components: Components,
 }
 
 impl Default for ColorState {
@@ -60,9 +107,9 @@ impl Default for ColorState {
     fn default() -> Self {
         ColorState {
             fill_color_space: ColorSpace::DeviceGray,
-            fill_components: vec![0.0],
+            fill_components: Components::default(),
             stroke_color_space: ColorSpace::DeviceGray,
-            stroke_components: vec![0.0],
+            stroke_components: Components::default(),
         }
     }
 }
@@ -71,14 +118,14 @@ impl ColorState {
     /// Resolve the current fill color.
     pub fn fill_color(&self) -> Color {
         self.fill_color_space
-            .to_color(&self.fill_components)
+            .to_color(self.fill_components.as_slice())
             .unwrap_or(Color::BLACK)
     }
 
     /// Resolve the current stroke color.
     pub fn stroke_color(&self) -> Color {
         self.stroke_color_space
-            .to_color(&self.stroke_components)
+            .to_color(self.stroke_components.as_slice())
             .unwrap_or(Color::BLACK)
     }
 }
