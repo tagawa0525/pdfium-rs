@@ -8,7 +8,8 @@ pub struct Page {
     pub media_box: Rect,
     /// Clip box, if different from `media_box`.
     pub crop_box: Option<Rect>,
-    /// Rotation in degrees clockwise (0, 90, 180, 270).
+    /// Rotation in degrees clockwise. Always one of 0, 90, 180, or 270;
+    /// non-conformant `/Rotate` values are normalised to the nearest multiple of 90.
     pub rotation: u16,
     /// Parsed content objects in rendering order.
     pub objects: Vec<PageObject>,

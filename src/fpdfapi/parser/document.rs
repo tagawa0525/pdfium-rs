@@ -24,7 +24,7 @@ enum LazyObject {
 struct PageInherit {
     media_box: Option<Rect>,
     crop_box: Option<Rect>,
-    /// Clockwise rotation in degrees (0, 90, 180, 270).
+    /// Clockwise rotation in degrees. Normalised to a multiple of 90.
     rotation: u16,
     resources: Option<PdfDictionary>,
 }
@@ -44,7 +44,11 @@ impl PageInherit {
             self.crop_box = Some(r);
         }
         if let Some(rot) = dict.get_i32(b"Rotate") {
-            self.rotation = rot.rem_euclid(360) as u16;
+            // PDF spec requires /Rotate to be a multiple of 90. Normalise with
+            // integer division so non-conformant values are floored to the
+            // nearest valid step (e.g. 45 → 0, 100 → 90).
+            let normalised = rot.rem_euclid(360) / 90 * 90;
+            self.rotation = normalised as u16;
         }
         if let Some(res) = dict.get_dict(b"Resources") {
             self.resources = Some(res.clone());
