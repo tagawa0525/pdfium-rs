@@ -5,6 +5,8 @@ use std::path::Path;
 
 use crate::error::{Error, Result};
 use crate::fpdfapi::parser::cross_ref::{CrossRefTable, XRefEntry, find_startxref};
+use crate::fpdfapi::parser::decode;
+use crate::fpdfapi::parser::encrypt_dict;
 use crate::fpdfapi::parser::object::{PdfDictionary, PdfObject, PdfStream};
 use crate::fpdfapi::parser::security::SecurityHandler;
 use crate::fpdfapi::parser::syntax::SyntaxParser;
@@ -76,12 +78,22 @@ impl Document<BufReader<File>> {
 
 impl<R: Read + Seek> Document<R> {
     /// Open a PDF from any readable + seekable stream.
+    ///
+    /// Returns an error if the PDF is encrypted. Use
+    /// [`from_reader_with_password`](Self::from_reader_with_password) instead.
     pub fn from_reader(mut reader: R) -> Result<Self> {
         // Find startxref
         let xref_offset = find_startxref(&mut reader)?;
 
         // Parse cross-reference table
         let xref = CrossRefTable::parse(&mut reader, xref_offset)?;
+
+        // Reject encrypted PDFs opened without a password
+        if xref.trailer.contains_key(b"Encrypt") {
+            return Err(Error::InvalidPdf(
+                "document is encrypted; use open_with_password or from_reader_with_password".into(),
+            ));
+        }
 
         // Build lazy object store from xref entries
         let mut objects = HashMap::new();
@@ -105,8 +117,56 @@ impl<R: Read + Seek> Document<R> {
     ///
     /// If the PDF is not encrypted, the password is ignored and the
     /// document opens normally.
-    pub fn from_reader_with_password(_reader: R, _password: &[u8]) -> Result<Self> {
-        todo!()
+    pub fn from_reader_with_password(mut reader: R, password: &[u8]) -> Result<Self> {
+        let xref_offset = find_startxref(&mut reader)?;
+        let xref = CrossRefTable::parse(&mut reader, xref_offset)?;
+
+        let mut objects = HashMap::new();
+        for (&obj_num, entry) in &xref.entries {
+            if let XRefEntry::Used { offset, .. } = entry {
+                objects.insert(obj_num, LazyObject::Unparsed { offset: *offset });
+            }
+        }
+
+        // Check for /Encrypt in trailer — resolve before building the main parser
+        let security = if xref.trailer.contains_key(b"Encrypt") {
+            let encrypt_dict_obj = match xref.trailer.get(b"Encrypt") {
+                Some(PdfObject::Reference(id)) => {
+                    if let Some(LazyObject::Unparsed { offset }) = objects.get(&id.num) {
+                        let mut tmp_parser = SyntaxParser::new(&mut reader)?;
+                        tmp_parser.seek(*offset)?;
+                        let (_, obj) = tmp_parser.read_indirect_object()?;
+                        obj
+                    } else {
+                        return Err(Error::InvalidPdf(
+                            "/Encrypt reference not found in xref".into(),
+                        ));
+                    }
+                }
+                Some(obj) => obj.clone(),
+                None => unreachable!(),
+            };
+
+            let encrypt_pdf_dict = encrypt_dict_obj
+                .as_dict()
+                .ok_or_else(|| Error::InvalidPdf("/Encrypt is not a dictionary".into()))?;
+
+            let ed = encrypt_dict::parse_encrypt_dict(encrypt_pdf_dict)?;
+            let file_id = encrypt_dict::extract_file_id(&xref.trailer);
+            let handler = SecurityHandler::new(&ed, &file_id, password)?;
+            Some(handler)
+        } else {
+            None
+        };
+
+        let parser = SyntaxParser::new(reader)?;
+
+        Ok(Document {
+            parser,
+            objects,
+            trailer: xref.trailer,
+            security,
+        })
     }
 
     /// Whether this document is encrypted.
@@ -118,13 +178,13 @@ impl<R: Read + Seek> Document<R> {
     ///
     /// `obj_num` and `gen_num` identify the indirect object that owns
     /// the stream (needed for per-object key derivation).
-    pub fn decode_stream(
-        &self,
-        _stream: &PdfStream,
-        _obj_num: u32,
-        _gen_num: u16,
-    ) -> Result<Vec<u8>> {
-        todo!()
+    pub fn decode_stream(&self, stream: &PdfStream, obj_num: u32, gen_num: u16) -> Result<Vec<u8>> {
+        let raw = if let Some(ref handler) = self.security {
+            handler.decrypt_bytes(obj_num, gen_num, &stream.data)?
+        } else {
+            stream.data.clone()
+        };
+        decode::decode_stream(&raw, &stream.dict)
     }
 
     /// Number of pages in the document.
@@ -401,7 +461,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn open_encrypted_pdf_with_correct_password() {
         let data = encrypted_rc4_pdf();
         let doc = Document::from_reader_with_password(Cursor::new(data), b"").unwrap();
@@ -409,7 +468,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn open_encrypted_pdf_wrong_password_is_error() {
         let data = encrypted_rc4_pdf();
         let result = Document::from_reader_with_password(Cursor::new(data), b"wrong");
@@ -417,7 +475,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn encrypted_pdf_unencrypted_open_detects_encryption() {
         // Opening an encrypted PDF without a password via from_reader
         // should detect /Encrypt in trailer and return an error.
@@ -427,7 +484,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn open_with_password_on_unencrypted_pdf_succeeds() {
         // Passing a password to an unencrypted PDF should just work.
         let data = minimal_pdf();
@@ -436,7 +492,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn decode_stream_unencrypted() {
         // Build a PDF with a FlateDecode stream and verify decode_stream works
         use std::io::Write;
@@ -466,7 +521,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn decode_stream_encrypted_rc4() {
         // Build encrypted PDF, open with password, decrypt + decode a stream
         use crate::fdrm::rc4;

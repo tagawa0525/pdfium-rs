@@ -1,4 +1,4 @@
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::fpdfapi::parser::object::PdfDictionary;
 use crate::fpdfapi::parser::security::{Cipher, EncryptDict};
 
@@ -7,21 +7,129 @@ use crate::fpdfapi::parser::security::{Cipher, EncryptDict};
 /// Reads `/Filter`, `/V`, `/R`, `/Length`, `/O`, `/U`, `/P`, `/CF`,
 /// `/StmF`, `/StrF`, `/EncryptMetadata`, and R5+ entries
 /// (`/OE`, `/UE`, `/Perms`).
-pub fn parse_encrypt_dict(_dict: &PdfDictionary) -> Result<EncryptDict> {
-    todo!()
+pub fn parse_encrypt_dict(dict: &PdfDictionary) -> Result<EncryptDict> {
+    // /Filter must be /Standard
+    let filter = dict
+        .get_name(b"Filter")
+        .ok_or_else(|| Error::InvalidPdf("/Encrypt missing /Filter".into()))?;
+    if filter.as_bytes() != b"Standard" {
+        return Err(Error::InvalidPdf(format!(
+            "unsupported security handler: {}",
+            filter
+        )));
+    }
+
+    let v = dict.get_i32(b"V").unwrap_or(0);
+    let revision = dict
+        .get_i32(b"R")
+        .ok_or_else(|| Error::InvalidPdf("/Encrypt missing /R".into()))? as u32;
+
+    // Key length: /Length is in bits, default 40
+    let length_bits = dict.get_i32(b"Length").unwrap_or(40);
+    let key_length = (length_bits / 8) as usize;
+
+    // Determine cipher from /V and /CF
+    let cipher = determine_cipher(v, dict);
+
+    // Override key_length for AES-256
+    let key_length = if cipher == Cipher::Aes256 {
+        32
+    } else {
+        key_length
+    };
+
+    let permissions = dict
+        .get_i32(b"P")
+        .ok_or_else(|| Error::InvalidPdf("/Encrypt missing /P".into()))?;
+
+    let owner_hash = dict
+        .get(b"O")
+        .and_then(|o| o.as_str())
+        .map(|s| s.as_bytes().to_vec())
+        .ok_or_else(|| Error::InvalidPdf("/Encrypt missing /O".into()))?;
+
+    let user_hash = dict
+        .get(b"U")
+        .and_then(|o| o.as_str())
+        .map(|s| s.as_bytes().to_vec())
+        .ok_or_else(|| Error::InvalidPdf("/Encrypt missing /U".into()))?;
+
+    // R5+ entries
+    let owner_encrypted_key = dict
+        .get(b"OE")
+        .and_then(|o| o.as_str())
+        .map(|s| s.as_bytes().to_vec());
+    let user_encrypted_key = dict
+        .get(b"UE")
+        .and_then(|o| o.as_str())
+        .map(|s| s.as_bytes().to_vec());
+    let encrypted_perms = dict
+        .get(b"Perms")
+        .and_then(|o| o.as_str())
+        .map(|s| s.as_bytes().to_vec());
+
+    let encrypt_metadata = dict
+        .get(b"EncryptMetadata")
+        .and_then(|o| o.as_bool())
+        .unwrap_or(true);
+
+    Ok(EncryptDict {
+        revision,
+        key_length,
+        cipher,
+        permissions,
+        owner_hash,
+        user_hash,
+        owner_encrypted_key,
+        user_encrypted_key,
+        encrypted_perms,
+        encrypt_metadata,
+    })
 }
 
 /// Extract the first file ID from the trailer `/ID` array.
 ///
 /// PDF spec requires `/ID` to be an array of two strings.
 /// Returns the first string as bytes, or an empty vec if absent.
-pub fn extract_file_id(_trailer: &PdfDictionary) -> Vec<u8> {
-    todo!()
+pub fn extract_file_id(trailer: &PdfDictionary) -> Vec<u8> {
+    trailer
+        .get_array(b"ID")
+        .and_then(|arr| arr.first())
+        .and_then(|obj| obj.as_str())
+        .map(|s| s.as_bytes().to_vec())
+        .unwrap_or_default()
 }
 
 /// Determine the cipher from the /V value and /CF sub-dictionaries.
-fn _determine_cipher(_v: i32, _dict: &PdfDictionary) -> Cipher {
-    todo!()
+fn determine_cipher(v: i32, dict: &PdfDictionary) -> Cipher {
+    match v {
+        1 | 2 => Cipher::Rc4,
+        4 => {
+            // Check /CF -> /StdCF -> /CFM for AES
+            let cfm = dict
+                .get_dict(b"CF")
+                .and_then(|cf| cf.get_dict(b"StdCF"))
+                .and_then(|stdcf| stdcf.get_name(b"CFM"))
+                .map(|n| n.as_bytes().to_vec());
+            match cfm.as_deref() {
+                Some(b"AESV2") => Cipher::Aes128,
+                _ => Cipher::Rc4, // V4 default or V4RC4
+            }
+        }
+        5 => {
+            // Check for AESV3
+            let cfm = dict
+                .get_dict(b"CF")
+                .and_then(|cf| cf.get_dict(b"StdCF"))
+                .and_then(|stdcf| stdcf.get_name(b"CFM"))
+                .map(|n| n.as_bytes().to_vec());
+            match cfm.as_deref() {
+                Some(b"AESV3") => Cipher::Aes256,
+                _ => Cipher::Aes128, // fallback
+            }
+        }
+        _ => Cipher::None,
+    }
 }
 
 #[cfg(test)]
@@ -100,7 +208,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn parse_rc4_r2_encrypt_dict() {
         let dict = make_rc4_r2_encrypt_dict();
         let ed = parse_encrypt_dict(&dict).unwrap();
@@ -114,7 +221,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn parse_aes128_r4_encrypt_dict() {
         let dict = make_aes128_r4_encrypt_dict();
         let ed = parse_encrypt_dict(&dict).unwrap();
@@ -124,7 +230,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn parse_aes256_r6_encrypt_dict() {
         let dict = make_aes256_r6_encrypt_dict();
         let ed = parse_encrypt_dict(&dict).unwrap();
@@ -137,14 +242,12 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn parse_encrypt_dict_missing_filter_is_error() {
         let dict = PdfDictionary::new(); // no /Filter
         assert!(parse_encrypt_dict(&dict).is_err());
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn parse_encrypt_dict_encrypt_metadata_false() {
         let mut dict = make_rc4_r2_encrypt_dict();
         dict.set("EncryptMetadata", PdfObject::Boolean(false));
@@ -153,7 +256,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn extract_file_id_from_trailer() {
         let mut trailer = PdfDictionary::new();
         let id_bytes = vec![0x01u8, 0x02, 0x03, 0x04];
@@ -169,7 +271,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn extract_file_id_missing_returns_empty() {
         let trailer = PdfDictionary::new();
         let file_id = extract_file_id(&trailer);
