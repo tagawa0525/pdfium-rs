@@ -287,12 +287,11 @@ impl<'a, R: Read + Seek> Parser<'a, R> {
             let Some(tok) = next_token(self.data, &mut self.pos) else {
                 break;
             };
-            match &tok {
+            match tok {
                 Token::Keyword(kw) => {
-                    let op = kw.clone();
-                    self.dispatch(&op);
+                    self.dispatch(&kw);
                 }
-                _ => self.stack.push(tok),
+                other => self.stack.push(other),
             }
         }
         self.objects
