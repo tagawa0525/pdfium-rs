@@ -377,5 +377,5 @@ cargo test integration_fpdfdoc
 | 3    | Bookmark ツリー               | done |
 | 4    | Annotation + page_dict        | done |
 | 5    | NameTree + Link               | done |
-| 6    | InteractiveForm (読み取り)    | todo |
+| 6    | InteractiveForm (読み取り)    | done |
 | 7    | 統合テスト + 公開 API         | todo |
