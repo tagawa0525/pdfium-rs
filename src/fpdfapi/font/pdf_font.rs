@@ -16,7 +16,7 @@ pub enum PdfFont {
         /// Index of the first character code covered by `widths`.
         first_char: u32,
         /// Character widths in 1/1000 of text-space units, starting at `first_char`.
-        widths: Vec<u16>,
+        widths: Vec<f64>,
         to_unicode: Option<ToUnicodeMap>,
     },
     /// CIDFont (Type0), Type3, or any subtype not yet supported.
@@ -107,7 +107,7 @@ impl PdfFont {
                 if code >= *first_char {
                     let idx = (code - first_char) as usize;
                     if idx < widths.len() {
-                        return widths[idx] as f64;
+                        return widths[idx];
                     }
                 }
                 1000.0
@@ -282,15 +282,11 @@ fn parse_encoding<R: Read + Seek>(
     }
 }
 
-/// Parse `/Widths` array into a `Vec<u16>`.
-fn parse_widths(font_dict: &PdfDictionary) -> Vec<u16> {
+/// Parse `/Widths` array into a `Vec<f64>`.
+fn parse_widths(font_dict: &PdfDictionary) -> Vec<f64> {
     font_dict
         .get_array(b"Widths")
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|o| o.as_f64().map(|v| v.clamp(0.0, 65535.0) as u16))
-                .collect()
-        })
+        .map(|arr| arr.iter().filter_map(|o| o.as_f64()).collect())
         .unwrap_or_default()
 }
 
