@@ -1,7 +1,7 @@
 /// Predefined PDF font encodings.
 ///
 /// Each encoding maps a single byte (0–255) to a Unicode code point.
-/// `0xFFFF` means "undefined / not mapped".
+/// `0` means "undefined / not mapped" (no valid Unicode scalar uses code point 0 in PDF).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PredefinedEncoding {
     WinAnsi,
