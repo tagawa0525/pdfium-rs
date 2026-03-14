@@ -80,7 +80,13 @@ fn read_literal_string(data: &[u8], pos: &mut usize) -> Vec<u8> {
                     b'(' => result.push(b'('),
                     b')' => result.push(b')'),
                     b'\\' => result.push(b'\\'),
-                    b'\n' | b'\r' => {} // line continuation
+                    // Line continuation: \r\n (CRLF) must consume both bytes
+                    b'\r' => {
+                        if *pos < data.len() && data[*pos] == b'\n' {
+                            *pos += 1;
+                        }
+                    }
+                    b'\n' => {} // LF line continuation
                     b'0'..=b'7' => {
                         // octal escape
                         let mut val = (escaped - b'0') as u32;
