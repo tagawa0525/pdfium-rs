@@ -4,6 +4,7 @@ use crate::fpdfapi::font::pdf_font::PdfFont;
 use crate::fpdfapi::font::standard_fonts;
 use crate::fpdfapi::page::page_object::TextObject;
 use crate::fxge::color::Color;
+use ttf_parser;
 
 /// Render a `TextObject` (fill and/or stroke) onto the pixmap.
 pub fn render_text(
@@ -31,11 +32,12 @@ pub fn render_text(
         None => return,
     };
 
-    let upm = match glyph::units_per_em(font_data) {
-        Some(upm) => upm as f32,
+    // Parse the font face once per TextObject (not per glyph).
+    let face = match glyph::parse_face(font_data) {
+        Some(f) => f,
         None => return,
     };
-
+    let upm = face.units_per_em() as f32;
     let font_size = text_obj.font_size as f32;
 
     // Build shape matrix: rotation/scale from CTM × text_matrix (no translation)
@@ -45,56 +47,68 @@ pub fn render_text(
     let should_fill = matches!(mode, 0 | 2 | 4 | 6);
     let should_stroke = matches!(mode, 1 | 2 | 5 | 6);
 
+    // Hoist Paint/Stroke construction outside the per-glyph loop (colors are constant).
+    let fill_paint = if should_fill {
+        let mut p = tiny_skia::Paint::default();
+        p.set_color(color_to_tiny_skia(text_obj.fill_color));
+        p.anti_alias = true;
+        Some(p)
+    } else {
+        None
+    };
+    let (stroke_paint, stroke_style) = if should_stroke {
+        let mut p = tiny_skia::Paint::default();
+        p.set_color(color_to_tiny_skia(text_obj.stroke_color));
+        p.anti_alias = true;
+        let s = tiny_skia::Stroke {
+            width: 1.0,
+            ..Default::default()
+        };
+        (Some(p), Some(s))
+    } else {
+        (None, None)
+    };
+
+    let glyph_scale = font_size / upm;
+    // Build the shape sub-transform (constant for all glyphs in this object).
+    let shape_transform =
+        tiny_skia::Transform::from_row(shape.a, shape.b, shape.c, shape.d, 0.0, 0.0)
+            .pre_concat(tiny_skia::Transform::from_scale(glyph_scale, glyph_scale));
+
     for entry in &text_obj.char_entries {
-        // Resolve character code → Unicode → glyph ID
-        let glyph_id = match resolve_glyph_id(&text_obj.font, entry.code, font_data) {
+        // Resolve character code → Unicode → glyph ID (reuse parsed face)
+        let glyph_id = match resolve_glyph_id_from_face(&text_obj.font, entry.code, &face) {
             Some(id) => id,
             None => continue,
         };
 
-        let glyph_path = match glyph::glyph_outline(font_data, glyph_id) {
+        let glyph_path = match glyph::glyph_outline_from_face(&face, glyph_id) {
             Some(p) => p,
             None => continue,
         };
 
         // Transform: page_to_device × translate(origin) × shape × scale(fontSize/upm)
-        // TrueType glyphs are Y-up; page_to_device flips Y.
-        let glyph_scale = font_size / upm;
         // page_to_device already flips Y (PDF Y-up → device Y-down).
-        // TrueType glyphs are also Y-up, so the flip from page_to_device
-        // naturally inverts them into device space. No additional Y-negate needed.
+        // TrueType glyphs are also Y-up, so the flip naturally inverts them.
         let glyph_transform = page_to_device
             .pre_concat(tiny_skia::Transform::from_translate(
                 entry.origin.x,
                 entry.origin.y,
             ))
-            .pre_concat(tiny_skia::Transform::from_row(
-                shape.a, shape.b, shape.c, shape.d, 0.0, 0.0,
-            ))
-            .pre_concat(tiny_skia::Transform::from_scale(glyph_scale, glyph_scale));
+            .pre_concat(shape_transform);
 
-        if should_fill {
-            let mut paint = tiny_skia::Paint::default();
-            paint.set_color(color_to_tiny_skia(text_obj.fill_color));
-            paint.anti_alias = true;
+        if let Some(ref paint) = fill_paint {
             pixmap.fill_path(
                 &glyph_path,
-                &paint,
+                paint,
                 tiny_skia::FillRule::Winding,
                 glyph_transform,
                 None,
             );
         }
 
-        if should_stroke {
-            let mut paint = tiny_skia::Paint::default();
-            paint.set_color(color_to_tiny_skia(text_obj.stroke_color));
-            paint.anti_alias = true;
-            let stroke = tiny_skia::Stroke {
-                width: 1.0,
-                ..Default::default()
-            };
-            pixmap.stroke_path(&glyph_path, &paint, &stroke, glyph_transform, None);
+        if let (Some(paint), Some(stroke)) = (&stroke_paint, &stroke_style) {
+            pixmap.stroke_path(&glyph_path, paint, stroke, glyph_transform, None);
         }
     }
 }
@@ -118,18 +132,22 @@ fn resolve_font_data(font: &PdfFont) -> Option<&[u8]> {
     standard_fonts::standard_font_data(base_font)
 }
 
-/// Resolve a character code to a glyph ID using the font's encoding and cmap.
-fn resolve_glyph_id(font: &PdfFont, code: u32, font_data: &[u8]) -> Option<u16> {
+/// Resolve a character code to a glyph ID using a pre-parsed `Face`.
+fn resolve_glyph_id_from_face(
+    font: &PdfFont,
+    code: u32,
+    face: &ttf_parser::Face<'_>,
+) -> Option<u16> {
     // Try unicode mapping first
     if let Some(unicode_str) = font.unicode_from_char_code(code)
         && let Some(ch) = unicode_str.chars().next()
-        && let Some(gid) = glyph::char_to_glyph_id(font_data, ch)
+        && let Some(gid) = glyph::char_to_glyph_id_from_face(face, ch)
     {
         return Some(gid);
     }
     // Fallback: try direct char code as Unicode code point
     if let Some(ch) = char::from_u32(code) {
-        return glyph::char_to_glyph_id(font_data, ch);
+        return glyph::char_to_glyph_id_from_face(face, ch);
     }
     None
 }

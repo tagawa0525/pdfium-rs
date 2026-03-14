@@ -1,16 +1,35 @@
 use tiny_skia::PathBuilder;
 use ttf_parser::Face;
 
+/// Parse font data into a `ttf_parser::Face`.
+///
+/// Returns `None` if the font data is invalid.
+pub fn parse_face(font_data: &[u8]) -> Option<Face<'_>> {
+    Face::parse(font_data, 0).ok()
+}
+
+/// Extract a glyph outline as a `tiny_skia::Path` from a parsed `Face`.
+///
+/// Returns `None` if the glyph ID is not found or has no outline (e.g. space).
+pub fn glyph_outline_from_face(face: &Face<'_>, glyph_id: u16) -> Option<tiny_skia::Path> {
+    let gid = ttf_parser::GlyphId(glyph_id);
+    let mut builder = PathCollector::new();
+    face.outline_glyph(gid, &mut builder)?;
+    builder.finish()
+}
+
+/// Map a Unicode character to a glyph ID from a parsed `Face`.
+pub fn char_to_glyph_id_from_face(face: &Face<'_>, unicode: char) -> Option<u16> {
+    face.glyph_index(unicode).map(|gid| gid.0)
+}
+
 /// Extract a glyph outline as a `tiny_skia::Path`.
 ///
 /// Returns `None` if the font data is invalid, the glyph ID is not found,
 /// or the glyph has no outline (e.g. space characters).
 pub fn glyph_outline(font_data: &[u8], glyph_id: u16) -> Option<tiny_skia::Path> {
     let face = Face::parse(font_data, 0).ok()?;
-    let gid = ttf_parser::GlyphId(glyph_id);
-    let mut builder = PathCollector::new();
-    face.outline_glyph(gid, &mut builder)?;
-    builder.finish()
+    glyph_outline_from_face(&face, glyph_id)
 }
 
 /// Map a Unicode character to a glyph ID using the font's cmap table.
@@ -18,8 +37,7 @@ pub fn glyph_outline(font_data: &[u8], glyph_id: u16) -> Option<tiny_skia::Path>
 /// Returns `None` if the font data is invalid or the character has no mapping.
 pub fn char_to_glyph_id(font_data: &[u8], unicode: char) -> Option<u16> {
     let face = Face::parse(font_data, 0).ok()?;
-    let gid = face.glyph_index(unicode)?;
-    Some(gid.0)
+    char_to_glyph_id_from_face(&face, unicode)
 }
 
 /// Get the font's units-per-em value.
