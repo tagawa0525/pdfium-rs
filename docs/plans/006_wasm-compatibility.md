@@ -1,6 +1,6 @@
 # Wasm互換性対応
 
-Status: **IN PROGRESS**
+Status: **COMPLETED**
 
 ## Context
 

@@ -2,8 +2,13 @@ use crate::error::{Error, Result};
 use crate::fpdfapi::parser::object::{PdfDictionary, PdfObject};
 use crate::fxcodec::{ascii_hex, ascii85, flate, lzw};
 
-/// Maximum size of a decoded stream (256 MiB). Protects against OOM from
-/// malicious or corrupt PDFs with degenerate compression ratios.
+/// Maximum size of a decoded stream. Protects against OOM from malicious or
+/// corrupt PDFs with degenerate compression ratios.
+/// Wasm environments use a smaller limit (64 MiB) because browser memory is
+/// more constrained; native targets use 256 MiB.
+#[cfg(target_arch = "wasm32")]
+const MAX_DECODED_SIZE: usize = 64 * 1024 * 1024;
+#[cfg(not(target_arch = "wasm32"))]
 const MAX_DECODED_SIZE: usize = 256 * 1024 * 1024;
 
 /// Decode a raw stream by applying its filter pipeline.
