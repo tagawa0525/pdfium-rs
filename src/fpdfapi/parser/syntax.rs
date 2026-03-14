@@ -563,12 +563,20 @@ impl<R: Read + Seek> SyntaxParser<R> {
                 None => return Err(Error::InvalidPdf("unexpected EOF in stream".into())),
             }
             if buf.len() >= MARKER.len() && buf[buf.len() - MARKER.len()..] == *MARKER {
+                // Require a preceding EOL (\n or \r\n) before "endstream" to
+                // avoid false matches inside binary stream data.
+                let data_end = buf.len() - MARKER.len();
+                let has_preceding_eol =
+                    data_end == 0 || buf[data_end - 1] == b'\n' || buf[data_end - 1] == b'\r';
+                if !has_preceding_eol {
+                    continue;
+                }
                 // Verify the next byte is whitespace/delimiter/EOF to avoid
-                // matching "endstreamXYZ" inside binary data.
+                // matching "endstreamXYZ".
                 let next = self.peek_byte()?;
                 if next.is_none() || next.is_some_and(|c| is_whitespace(c) || is_delimiter(c)) {
                     // Remove the "endstream" marker from the data.
-                    buf.truncate(buf.len() - MARKER.len());
+                    buf.truncate(data_end);
                     // Strip trailing EOL from data.
                     if buf.ends_with(b"\r\n") {
                         buf.truncate(buf.len() - 2);
