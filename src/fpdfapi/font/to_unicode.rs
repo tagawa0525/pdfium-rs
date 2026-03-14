@@ -168,7 +168,8 @@ fn parse_bfrange(data: &[u8], pos: &mut usize, map: &mut HashMap<u32, String>) {
                 break;
             };
             let Some(base_cp) = utf16be_bytes_to_codepoint(&base_bytes) else {
-                break;
+                // Non-BMP / surrogate pair: skip this range but continue parsing
+                continue;
             };
             for (i, code) in (lo..=hi).enumerate() {
                 if let Some(ch) = char::from_u32(base_cp + i as u32) {
