@@ -135,7 +135,13 @@ impl<R: Read + Seek> Document<R> {
                     if let Some(LazyObject::Unparsed { offset }) = objects.get(&id.num) {
                         let mut tmp_parser = SyntaxParser::new(&mut reader)?;
                         tmp_parser.seek(*offset)?;
-                        let (_, obj) = tmp_parser.read_indirect_object()?;
+                        let (parsed_id, obj) = tmp_parser.read_indirect_object()?;
+                        if parsed_id.num != id.num {
+                            return Err(Error::InvalidPdf(format!(
+                                "xref for /Encrypt object {} points to object {} at offset {}",
+                                id.num, parsed_id.num, offset
+                            )));
+                        }
                         obj
                     } else {
                         return Err(Error::InvalidPdf(
