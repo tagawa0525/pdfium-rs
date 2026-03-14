@@ -515,7 +515,96 @@ impl<R: Read + Seek> Document<R> {
     ///
     /// Returns an empty `Vec` if the document has no `/Outlines` entry.
     pub fn bookmarks(&mut self) -> Result<Vec<crate::fpdfdoc::bookmark::Bookmark>> {
-        todo!()
+        use std::collections::HashSet;
+
+        // /Root → /Outlines → /First
+        let root_ref = match self.trailer.get(b"Root").and_then(|o| o.as_reference()) {
+            Some(r) => r,
+            None => return Ok(vec![]),
+        };
+        let outlines_ref = {
+            let root = self.object(root_ref.num)?;
+            match root.as_dict().and_then(|d| d.get_reference(b"Outlines")) {
+                Some(r) => r,
+                None => return Ok(vec![]),
+            }
+        };
+        let first_ref = {
+            let outlines = self.object(outlines_ref.num)?;
+            match outlines.as_dict().and_then(|d| d.get_reference(b"First")) {
+                Some(r) => r,
+                None => return Ok(vec![]),
+            }
+        };
+
+        let mut seen = HashSet::new();
+        self.collect_bookmarks(first_ref.num, &mut seen)
+    }
+
+    fn collect_bookmarks(
+        &mut self,
+        first_num: u32,
+        seen: &mut std::collections::HashSet<u32>,
+    ) -> Result<Vec<crate::fpdfdoc::bookmark::Bookmark>> {
+        use crate::fpdfdoc::action::Action;
+        use crate::fpdfdoc::bookmark::Bookmark;
+
+        let mut result = Vec::new();
+        let mut current = first_num;
+
+        loop {
+            if !seen.insert(current) {
+                // Circular reference detected
+                break;
+            }
+
+            let dict = match self.object(current)?.as_dict() {
+                Some(d) => d.clone(),
+                None => break,
+            };
+
+            // /Title: strip control characters, decode as Latin-1 / UTF-8 best-effort
+            let title = dict
+                .get_string(b"Title")
+                .map(|s| {
+                    String::from_utf8_lossy(s.as_bytes())
+                        .chars()
+                        .map(|c| if c.is_control() { ' ' } else { c })
+                        .collect::<String>()
+                })
+                .unwrap_or_default();
+
+            let count = dict.get_i32(b"Count").unwrap_or(0);
+
+            // /A action (inline dictionary)
+            let action = dict.get_dict(b"A").map(|d| Action::from_dict(d.clone()));
+
+            // /Dest inline destination array
+            let dest_array = dict.get_array(b"Dest").map(|arr| arr.to_vec());
+
+            // Recurse into children via /First
+            let children = if let Some(child_ref) = dict.get_reference(b"First") {
+                self.collect_bookmarks(child_ref.num, seen)?
+            } else {
+                vec![]
+            };
+
+            result.push(Bookmark {
+                title,
+                action,
+                dest_array,
+                count,
+                children,
+            });
+
+            // Advance to /Next sibling
+            match dict.get_reference(b"Next") {
+                Some(next) => current = next.num,
+                None => break,
+            }
+        }
+
+        Ok(result)
     }
 
     /// Get the root (catalog) dictionary.

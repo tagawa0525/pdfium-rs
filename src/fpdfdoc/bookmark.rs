@@ -117,7 +117,7 @@ mod tests {
     // --- Tests ---
 
     #[test]
-    #[ignore = "not yet implemented"]
+
     fn bookmarks_empty_when_no_outlines() {
         let mut doc = Document::from_reader(Cursor::new(minimal_pdf_no_outlines())).unwrap();
         let bookmarks = doc.bookmarks().unwrap();
@@ -125,7 +125,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
+
     fn single_bookmark_title() {
         let mut doc = Document::from_reader(Cursor::new(pdf_with_single_bookmark())).unwrap();
         let bookmarks = doc.bookmarks().unwrap();
@@ -134,7 +134,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
+
     fn single_bookmark_no_children() {
         let mut doc = Document::from_reader(Cursor::new(pdf_with_single_bookmark())).unwrap();
         let bookmarks = doc.bookmarks().unwrap();
@@ -142,7 +142,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
+
     fn single_bookmark_count_zero() {
         let mut doc = Document::from_reader(Cursor::new(pdf_with_single_bookmark())).unwrap();
         let bookmarks = doc.bookmarks().unwrap();
@@ -150,7 +150,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
+
     fn nested_bookmark_tree() {
         let mut doc = Document::from_reader(Cursor::new(pdf_with_nested_bookmarks())).unwrap();
         let bookmarks = doc.bookmarks().unwrap();
@@ -161,7 +161,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
+
     fn bookmark_with_uri_action() {
         let mut pdf = Vec::new();
         pdf.extend_from_slice(b"%PDF-1.4\n");
