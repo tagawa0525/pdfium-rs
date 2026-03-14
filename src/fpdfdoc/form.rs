@@ -3,6 +3,7 @@ use std::io::{Read, Seek};
 use crate::error::{Error, Result};
 use crate::fpdfapi::parser::document::Document;
 use crate::fpdfapi::parser::object::PdfObject;
+use crate::fpdfdoc::util::decode_pdf_text_string;
 
 /// The type of an interactive form field.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -276,61 +277,6 @@ fn pdf_obj_to_string(obj: &PdfObject) -> Option<String> {
         PdfObject::Name(n) => Some(String::from_utf8_lossy(n.as_bytes()).into_owned()),
         PdfObject::Integer(v) => Some(v.to_string()),
         _ => None,
-    }
-}
-
-fn decode_pdf_text_string(bytes: &[u8]) -> String {
-    let raw: String = if bytes.starts_with(b"\xfe\xff") {
-        let pairs = bytes[2..].chunks_exact(2);
-        pairs
-            .filter_map(|p| {
-                let cp = u16::from_be_bytes([p[0], p[1]]);
-                char::from_u32(cp as u32)
-            })
-            .collect()
-    } else {
-        bytes.iter().map(|&b| pdf_doc_encoding_char(b)).collect()
-    };
-
-    raw.chars()
-        .map(|c| if c.is_control() { ' ' } else { c })
-        .collect()
-}
-
-fn pdf_doc_encoding_char(b: u8) -> char {
-    match b {
-        0x80 => '\u{2022}',
-        0x81 => '\u{2020}',
-        0x82 => '\u{2021}',
-        0x83 => '\u{2026}',
-        0x84 => '\u{2014}',
-        0x85 => '\u{2013}',
-        0x86 => '\u{0192}',
-        0x87 => '\u{2044}',
-        0x88 => '\u{2039}',
-        0x89 => '\u{203A}',
-        0x8A => '\u{2212}',
-        0x8B => '\u{2030}',
-        0x8C => '\u{201E}',
-        0x8D => '\u{201C}',
-        0x8E => '\u{201D}',
-        0x8F => '\u{2018}',
-        0x90 => '\u{2019}',
-        0x91 => '\u{201A}',
-        0x92 => '\u{2122}',
-        0x93 => '\u{FB01}',
-        0x94 => '\u{FB02}',
-        0x95 => '\u{0141}',
-        0x96 => '\u{0152}',
-        0x97 => '\u{0160}',
-        0x98 => '\u{0178}',
-        0x99 => '\u{017D}',
-        0x9A => '\u{0131}',
-        0x9B => '\u{0142}',
-        0x9C => '\u{0153}',
-        0x9D => '\u{0161}',
-        0x9E => '\u{017E}',
-        _ => b as char,
     }
 }
 

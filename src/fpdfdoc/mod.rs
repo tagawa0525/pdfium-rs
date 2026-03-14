@@ -5,6 +5,7 @@ pub mod dest;
 pub mod form;
 pub mod link;
 pub mod name_tree;
+mod util;
 
 pub use action::{Action, ActionType};
 pub use annot::{AnnotFlags, AnnotSubtype, Annotation, AnnotationsExt};
