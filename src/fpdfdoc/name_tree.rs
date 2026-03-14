@@ -30,10 +30,63 @@ impl NameTree {
     /// Checks `/Names/Dests` name tree first, then falls back to the
     /// legacy `/Dests` dictionary in the catalog.
     pub fn lookup_named_dest<R: Read + Seek>(
-        _doc: &mut Document<R>,
+        doc: &mut Document<R>,
         name: &[u8],
     ) -> Result<Option<Vec<PdfObject>>> {
-        todo!("name={name:?}")
+        let catalog = doc.catalog()?.clone();
+
+        // 1. /Names/Dests name tree (PDF 1.2+)
+        if let Some(names_obj) = catalog.get(b"Names").cloned()
+            && let Some(names_dict) = resolve_to_dict(doc, names_obj)
+            && let Some(dests_obj) = names_dict.get(b"Dests").cloned()
+            && let Some(dests_root) = resolve_to_dict(doc, dests_obj)
+            && let Some(val) = lookup_in_dict(doc, &dests_root, name, 0)?
+        {
+            return Ok(Some(dest_obj_to_array(doc, val)?));
+        }
+
+        // 2. Legacy /Dests dictionary
+        if let Some(dests_obj) = catalog.get(b"Dests").cloned()
+            && let Some(dests_dict) = resolve_to_dict(doc, dests_obj)
+            && let Some(val) = dests_dict.get(name).cloned()
+        {
+            return Ok(Some(dest_obj_to_array(doc, val)?));
+        }
+
+        Ok(None)
+    }
+}
+
+/// Resolve a `PdfObject` to an owned `PdfDictionary`.
+/// Handles both direct dicts and indirect references.
+fn resolve_to_dict<R: Read + Seek>(doc: &mut Document<R>, obj: PdfObject) -> Option<PdfDictionary> {
+    match obj {
+        PdfObject::Dictionary(d) => Some(d),
+        PdfObject::Reference(id) => doc.object(id.num).ok()?.as_dict().cloned(),
+        _ => None,
+    }
+}
+
+/// Convert a dest value (from a name tree or legacy /Dests dict) into an array.
+///
+/// A dest can be stored as:
+/// - An array directly: `[page_ref /XYZ x y zoom]`
+/// - A dict with `/D`: `<< /D [page_ref /XYZ x y zoom] >>`
+/// - An indirect reference to either of the above
+fn dest_obj_to_array<R: Read + Seek>(
+    doc: &mut Document<R>,
+    val: PdfObject,
+) -> Result<Vec<PdfObject>> {
+    match val {
+        PdfObject::Array(arr) => Ok(arr),
+        PdfObject::Dictionary(dict) => {
+            Ok(dict.get_array(b"D").map(|a| a.to_vec()).unwrap_or_default())
+        }
+        PdfObject::Reference(id) => {
+            let resolved = doc.object(id.num)?.clone();
+            dest_obj_to_array(doc, resolved)
+        }
+        _ => Ok(vec![]),
     }
 }
 
@@ -171,7 +224,6 @@ mod tests {
     // --- Named dest lookup ---
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn lookup_named_dest_via_names_dests() {
         let pdf = pdf_with_named_dests_tree();
         let mut doc = Document::from_reader(Cursor::new(pdf)).unwrap();
@@ -180,7 +232,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn lookup_named_dest_legacy_dests_dict() {
         let pdf = pdf_with_legacy_dests();
         let mut doc = Document::from_reader(Cursor::new(pdf)).unwrap();
@@ -189,7 +240,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn lookup_named_dest_not_found() {
         let pdf = minimal_pdf();
         let mut doc = Document::from_reader(Cursor::new(pdf)).unwrap();
