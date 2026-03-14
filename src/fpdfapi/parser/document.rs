@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufReader, Read, Seek};
@@ -191,9 +192,9 @@ impl<R: Read + Seek> Document<R> {
     /// the stream (needed for per-object key derivation).
     pub fn decode_stream(&self, stream: &PdfStream, obj_num: u32, gen_num: u16) -> Result<Vec<u8>> {
         let raw = if let Some(ref handler) = self.security {
-            handler.decrypt_bytes(obj_num, gen_num, &stream.data)?
+            Cow::Owned(handler.decrypt_bytes(obj_num, gen_num, &stream.data)?)
         } else {
-            stream.data.clone()
+            Cow::Borrowed(&stream.data)
         };
         decode::decode_stream(&raw, &stream.dict)
     }
