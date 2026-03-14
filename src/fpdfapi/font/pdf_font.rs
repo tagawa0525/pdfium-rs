@@ -211,12 +211,13 @@ fn glyph_name_to_char(name: &[u8]) -> Option<char> {
     }
 }
 
-/// Map a `/Encoding` name to a `PredefinedEncoding`.
+/// Map a `/Encoding` or `/BaseEncoding` name to a `PredefinedEncoding`.
 fn name_to_predefined(name: &[u8]) -> PredefinedEncoding {
     match name {
         b"WinAnsiEncoding" => PredefinedEncoding::WinAnsi,
         b"MacRomanEncoding" => PredefinedEncoding::MacRoman,
         b"StandardEncoding" => PredefinedEncoding::Standard,
+        b"PDFDocEncoding" => PredefinedEncoding::PdfDoc,
         b"MacExpertEncoding" => PredefinedEncoding::MacExpert,
         b"SymbolEncoding" => PredefinedEncoding::Symbol,
         b"ZapfDingbatsEncoding" => PredefinedEncoding::ZapfDingbats,

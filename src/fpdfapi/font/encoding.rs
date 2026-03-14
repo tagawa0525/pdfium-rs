@@ -48,7 +48,9 @@ pub fn unicode_from_predefined(enc: PredefinedEncoding, code: u8) -> Option<char
         PredefinedEncoding::WinAnsi => &WIN_ANSI,
         PredefinedEncoding::MacRoman => &MAC_ROMAN,
         PredefinedEncoding::Standard => &STANDARD,
-        // Remaining encodings are not yet implemented; treat as unmapped.
+        PredefinedEncoding::PdfDoc => &PDF_DOC,
+        // MacExpert, Symbol, and ZapfDingbats use non-Latin glyphs;
+        // full tables are deferred to a later phase.
         _ => return None,
     };
     let cp = table[code as usize];
@@ -379,6 +381,74 @@ const MAC_ROMAN: [u32; 256] = {
     t[0xFB] = 0x02DD; // ˝
     t[0xFC] = 0x02DB; // ˛
     t[0xFD] = 0x02C7; // ˇ
+    t
+};
+
+/// PDFDocEncoding (PDF Reference Table D.2).
+///
+/// Identical to Latin-1 for 0x20–0x7E and 0xA1–0xFF. The 0x80–0x9F range
+/// maps to specific Unicode code points (not the Windows-1252 extensions).
+/// 0x7F, 0xAD are undefined in PDFDocEncoding.
+const PDF_DOC: [u32; 256] = {
+    let mut t = [0u32; 256];
+    // 0x18–0x1F: PDFDocEncoding-specific characters
+    t[0x18] = 0x02D8; // breve
+    t[0x19] = 0x02C7; // caron
+    t[0x1A] = 0x02C6; // circumflex
+    t[0x1B] = 0x02D9; // dotaccent
+    t[0x1C] = 0x02DD; // hungarumlaut
+    t[0x1D] = 0x02DB; // ogonek
+    t[0x1E] = 0x02DA; // ring
+    t[0x1F] = 0x02DC; // tilde
+    // 0x20–0x7E: ASCII printable
+    let mut i = 0x20u32;
+    while i <= 0x7E {
+        t[i as usize] = i;
+        i += 1;
+    }
+    // 0x80–0x9F: PDFDocEncoding specific
+    t[0x80] = 0x2022; // bullet
+    t[0x81] = 0x2020; // dagger
+    t[0x82] = 0x2021; // daggerdbl
+    t[0x83] = 0x2026; // ellipsis
+    t[0x84] = 0x2014; // emdash
+    t[0x85] = 0x2013; // endash
+    t[0x86] = 0x0192; // florin
+    t[0x87] = 0x2044; // fraction
+    t[0x88] = 0x2039; // guilsinglleft
+    t[0x89] = 0x203A; // guilsinglright
+    t[0x8A] = 0x2212; // minus
+    t[0x8B] = 0x2030; // perthousand
+    t[0x8C] = 0x201E; // quotedblbase
+    t[0x8D] = 0x201C; // quotedblleft
+    t[0x8E] = 0x201D; // quotedblright
+    t[0x8F] = 0x2018; // quoteleft
+    t[0x90] = 0x2019; // quoteright
+    t[0x91] = 0x201A; // quotesinglbase
+    t[0x92] = 0x2122; // trademark
+    t[0x93] = 0xFB01; // fi
+    t[0x94] = 0xFB02; // fl
+    t[0x95] = 0x0141; // Lslash
+    t[0x96] = 0x0152; // OE
+    t[0x97] = 0x0160; // Scaron
+    t[0x98] = 0x0178; // Ydieresis
+    t[0x99] = 0x017D; // Zcaron
+    t[0x9A] = 0x0131; // dotlessi
+    t[0x9B] = 0x0142; // lslash
+    t[0x9C] = 0x0153; // oe
+    t[0x9D] = 0x0161; // scaron
+    t[0x9E] = 0x017E; // zcaron
+    // 0x9F: undefined
+    // 0xA0: NO-BREAK SPACE
+    t[0xA0] = 0x00A0;
+    // 0xA1–0xFF: Latin-1 Supplement (same as ISO-8859-1)
+    let mut i = 0xA1u32;
+    while i <= 0xFF {
+        t[i as usize] = i;
+        i += 1;
+    }
+    // 0xAD (SOFT HYPHEN) is undefined in PDFDocEncoding
+    t[0xAD] = 0;
     t
 };
 
