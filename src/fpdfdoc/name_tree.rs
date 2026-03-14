@@ -37,9 +37,9 @@ impl NameTree {
 
         // 1. /Names/Dests name tree (PDF 1.2+)
         if let Some(names_obj) = catalog.get(b"Names").cloned()
-            && let Some(names_dict) = resolve_to_dict(doc, names_obj)
+            && let Some(names_dict) = resolve_to_dict(doc, names_obj)?
             && let Some(dests_obj) = names_dict.get(b"Dests").cloned()
-            && let Some(dests_root) = resolve_to_dict(doc, dests_obj)
+            && let Some(dests_root) = resolve_to_dict(doc, dests_obj)?
             && let Some(val) = lookup_in_dict(doc, &dests_root, name, 0)?
         {
             return Ok(Some(dest_obj_to_array(doc, val)?));
@@ -47,7 +47,7 @@ impl NameTree {
 
         // 2. Legacy /Dests dictionary
         if let Some(dests_obj) = catalog.get(b"Dests").cloned()
-            && let Some(dests_dict) = resolve_to_dict(doc, dests_obj)
+            && let Some(dests_dict) = resolve_to_dict(doc, dests_obj)?
             && let Some(val) = dests_dict.get(name).cloned()
         {
             return Ok(Some(dest_obj_to_array(doc, val)?));
@@ -59,11 +59,15 @@ impl NameTree {
 
 /// Resolve a `PdfObject` to an owned `PdfDictionary`.
 /// Handles both direct dicts and indirect references.
-fn resolve_to_dict<R: Read + Seek>(doc: &mut Document<R>, obj: PdfObject) -> Option<PdfDictionary> {
+/// Returns `Ok(None)` for non-dict, non-reference objects; propagates I/O errors.
+fn resolve_to_dict<R: Read + Seek>(
+    doc: &mut Document<R>,
+    obj: PdfObject,
+) -> Result<Option<PdfDictionary>> {
     match obj {
-        PdfObject::Dictionary(d) => Some(d),
-        PdfObject::Reference(id) => doc.object(id.num).ok()?.as_dict().cloned(),
-        _ => None,
+        PdfObject::Dictionary(d) => Ok(Some(d)),
+        PdfObject::Reference(id) => Ok(doc.object(id.num)?.as_dict().cloned()),
+        _ => Ok(None),
     }
 }
 
@@ -79,9 +83,10 @@ fn dest_obj_to_array<R: Read + Seek>(
 ) -> Result<Vec<PdfObject>> {
     match val {
         PdfObject::Array(arr) => Ok(arr),
-        PdfObject::Dictionary(dict) => {
-            Ok(dict.get_array(b"D").map(|a| a.to_vec()).unwrap_or_default())
-        }
+        PdfObject::Dictionary(dict) => match dict.get(b"D").cloned() {
+            Some(d_obj) => dest_obj_to_array(doc, d_obj),
+            None => Ok(vec![]),
+        },
         PdfObject::Reference(id) => {
             let resolved = doc.object(id.num)?.clone();
             dest_obj_to_array(doc, resolved)
@@ -112,7 +117,15 @@ fn lookup_in_dict<R: Read + Seek>(
             .filter_map(|o| o.as_reference().map(|id| id.num))
             .collect();
         for kid_num in kid_refs {
-            let kid_dict = doc.object(kid_num)?.as_dict().cloned().unwrap_or_default();
+            let kid_dict = doc
+                .object(kid_num)?
+                .as_dict()
+                .ok_or_else(|| {
+                    crate::error::Error::InvalidPdf(format!(
+                        "name tree kid {kid_num} is not a dictionary"
+                    ))
+                })?
+                .clone();
             if let Some(v) = lookup_in_dict(doc, &kid_dict, name, depth + 1)? {
                 return Ok(Some(v));
             }
