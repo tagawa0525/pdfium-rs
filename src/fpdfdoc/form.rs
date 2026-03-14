@@ -97,7 +97,7 @@ impl<R: Read + Seek> FormExt for Document<R> {
             .unwrap_or_default();
 
         let mut fields = Vec::new();
-        collect_fields(self, field_nums, None, None, 0, &mut fields)?;
+        collect_fields(self, field_nums, None, None, 0, 0, &mut fields)?;
 
         Ok(Some(InteractiveForm { fields }))
     }
@@ -107,14 +107,20 @@ impl<R: Read + Seek> FormExt for Document<R> {
 // Internal helpers
 // ---------------------------------------------------------------------------
 
+const MAX_FORM_DEPTH: usize = 32;
+
 fn collect_fields<R: Read + Seek>(
     doc: &mut Document<R>,
     field_nums: Vec<u32>,
     parent_name: Option<String>,
     inh_ft: Option<Vec<u8>>,
     inh_ff: u32,
+    depth: usize,
     result: &mut Vec<FormField>,
 ) -> Result<()> {
+    if depth >= MAX_FORM_DEPTH {
+        return Ok(());
+    }
     for num in field_nums {
         let dict = doc
             .object(num)?
@@ -155,9 +161,8 @@ fn collect_fields<R: Read + Seek>(
         let mut subfield_kids = Vec::new();
         for &kid_num in &kid_nums {
             let has_t = doc
-                .object(kid_num)
-                .ok()
-                .and_then(|o| o.as_dict())
+                .object(kid_num)?
+                .as_dict()
                 .map(|d| d.get(b"T").is_some())
                 .unwrap_or(false);
             if has_t {
@@ -167,7 +172,15 @@ fn collect_fields<R: Read + Seek>(
 
         if !subfield_kids.is_empty() {
             // Intermediate node — recurse into sub-fields
-            collect_fields(doc, subfield_kids, full_name, ft_bytes, ff, result)?;
+            collect_fields(
+                doc,
+                subfield_kids,
+                full_name,
+                ft_bytes,
+                ff,
+                depth + 1,
+                result,
+            )?;
         } else if let Some(name) = full_name {
             // Terminal field — emit
             let field_type = determine_field_type(ft_bytes.as_deref(), ff);
@@ -246,12 +259,10 @@ fn parse_opt_array(arr: &[PdfObject]) -> Vec<FormOption> {
             PdfObject::Array(sub) if sub.len() >= 2 => {
                 let value = sub[0]
                     .as_str()
-                    .map(|s| decode_pdf_text_string(s.as_bytes()))
-                    .unwrap_or_default();
+                    .map(|s| decode_pdf_text_string(s.as_bytes()))?;
                 let label = sub[1]
                     .as_str()
-                    .map(|s| decode_pdf_text_string(s.as_bytes()))
-                    .unwrap_or_default();
+                    .map(|s| decode_pdf_text_string(s.as_bytes()))?;
                 Some(FormOption { value, label })
             }
             _ => None,
