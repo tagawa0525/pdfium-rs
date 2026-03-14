@@ -1,5 +1,7 @@
 use crate::fpdfapi::font::pdf_font::PdfFont;
+use crate::fpdfapi::page::color_space::ColorState;
 use crate::fxcrt::coordinates::{Matrix, Point};
+use crate::fxge::color::{LineCap, LineJoin};
 
 /// Text rendering state (PDF text state parameters).
 #[derive(Debug, Clone)]
@@ -25,7 +27,7 @@ impl Default for TextState {
     }
 }
 
-/// Graphics state relevant to text extraction (Phase 3 subset).
+/// Graphics state for text extraction and rendering.
 ///
 /// `Clone` is used to save/restore state for `q`/`Q` operators.
 #[derive(Debug, Clone)]
@@ -48,6 +50,22 @@ pub struct GraphicsState {
     pub text_state: TextState,
     /// Currently active font (set by `Tf` operator).
     pub font: Option<PdfFont>,
+
+    // --- Phase 4 additions ---
+    /// Fill and stroke color state.
+    pub color_state: ColorState,
+    /// Line width (`w` operator).
+    pub line_width: f32,
+    /// Line cap style (`J` operator).
+    pub line_cap: LineCap,
+    /// Line join style (`j` operator).
+    pub line_join: LineJoin,
+    /// Miter limit (`M` operator).
+    pub miter_limit: f32,
+    /// Dash pattern (`d` operator).
+    pub dash_array: Vec<f32>,
+    /// Dash phase (`d` operator).
+    pub dash_phase: f32,
 }
 
 impl Default for GraphicsState {
@@ -62,6 +80,13 @@ impl Default for GraphicsState {
             text_horz_scale: 1.0,
             text_state: TextState::default(),
             font: None,
+            color_state: ColorState::default(),
+            line_width: 1.0,
+            line_cap: LineCap::default(),
+            line_join: LineJoin::default(),
+            miter_limit: 10.0,
+            dash_array: Vec::new(),
+            dash_phase: 0.0,
         }
     }
 }
