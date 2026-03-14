@@ -1,40 +1,17 @@
-use std::fmt;
 use std::io;
 
 /// Unified error type for all pdfium-rs operations.
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum Error {
     /// I/O error (file not found, read failure, etc.)
-    Io(io::Error),
+    #[error("I/O error: {0}")]
+    Io(#[from] io::Error),
     /// Invalid or corrupted PDF structure.
+    #[error("invalid PDF: {0}")]
     InvalidPdf(String),
     /// Unsupported PDF feature.
+    #[error("unsupported: {0}")]
     Unsupported(String),
-}
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Error::Io(e) => write!(f, "I/O error: {e}"),
-            Error::InvalidPdf(msg) => write!(f, "invalid PDF: {msg}"),
-            Error::Unsupported(msg) => write!(f, "unsupported: {msg}"),
-        }
-    }
-}
-
-impl std::error::Error for Error {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Error::Io(e) => Some(e),
-            _ => None,
-        }
-    }
-}
-
-impl From<io::Error> for Error {
-    fn from(e: io::Error) -> Self {
-        Error::Io(e)
-    }
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
