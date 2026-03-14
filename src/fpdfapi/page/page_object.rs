@@ -49,6 +49,8 @@ pub struct PathObject {
     pub line_cap: LineCap,
     pub line_join: LineJoin,
     pub miter_limit: f32,
+    pub dash_array: Vec<f32>,
+    pub dash_phase: f32,
     pub ctm: Matrix,
 }
 
@@ -140,6 +142,8 @@ mod tests {
             line_cap: LineCap::default(),
             line_join: LineJoin::default(),
             miter_limit: 10.0,
+            dash_array: Vec::new(),
+            dash_phase: 0.0,
             ctm: Matrix::default(),
         };
         assert_eq!(obj.fill_rule, FillRule::NonZero);
@@ -147,6 +151,8 @@ mod tests {
         assert_eq!(obj.fill_color, Color::BLACK);
         assert_eq!(obj.line_width, 1.0);
         assert_eq!(obj.miter_limit, 10.0);
+        assert!(obj.dash_array.is_empty());
+        assert_eq!(obj.dash_phase, 0.0);
     }
 
     #[test]
