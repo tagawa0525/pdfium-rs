@@ -1,12 +1,21 @@
 use crate::fxcrt::coordinates::{Matrix, Point, Rect};
 
 /// Classification of a path point.
+///
+/// For cubic Bézier curves (`cubic_to`), three consecutive `BezierTo` points are added:
+/// the two control points and the end point. Renderers identify the endpoint as the
+/// third `BezierTo` in each group of three.
+///
+/// This convention matches C++ pdfium's `FXPT_TYPE::BezierTo`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PathPointKind {
     Move,
     Line,
-    /// Control point of a cubic Bézier segment.
-    BezierControl,
+    /// Point in a cubic Bézier group.
+    ///
+    /// Each curve consists of three consecutive `BezierTo` points:
+    /// control point 1, control point 2, and the curve endpoint.
+    BezierTo,
 }
 
 /// A single point in a path with its role and optional close flag.
@@ -49,12 +58,12 @@ impl Path {
 
     /// Append a cubic Bézier curve.
     ///
-    /// Adds three `BezierControl` points: ctrl1, ctrl2, end.
+    /// Adds three `BezierTo` points: ctrl1, ctrl2, end (curve endpoint).
     pub fn cubic_to(&mut self, ctrl1: Point, ctrl2: Point, end: Point) {
         for p in [ctrl1, ctrl2, end] {
             self.points.push(PathPoint {
                 point: p,
-                kind: PathPointKind::BezierControl,
+                kind: PathPointKind::BezierTo,
                 close: false,
             });
         }
@@ -160,8 +169,8 @@ mod tests {
         );
         // move + 3 bezier control points
         assert_eq!(p.points.len(), 4);
-        assert_eq!(p.points[1].kind, PathPointKind::BezierControl);
-        assert_eq!(p.points[2].kind, PathPointKind::BezierControl);
-        assert_eq!(p.points[3].kind, PathPointKind::BezierControl);
+        assert_eq!(p.points[1].kind, PathPointKind::BezierTo);
+        assert_eq!(p.points[2].kind, PathPointKind::BezierTo);
+        assert_eq!(p.points[3].kind, PathPointKind::BezierTo);
     }
 }
