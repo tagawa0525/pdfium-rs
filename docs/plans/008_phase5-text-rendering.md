@@ -39,7 +39,7 @@ TrueType の quadratic Bezier は `tiny_skia::PathBuilder::quad_to` でそのま
 
 hello_world.pdf は Times-Roman / Helvetica を使うが FontDescriptor がない（非埋め込み）。
 Liberation Sans/Serif/Mono（SIL OFL ライセンス）を `include_bytes!` でバンドルし、
-PDF 標準 14 フォントにマッピングする。合計 ~400KB。
+PDF 標準 14 フォントにマッピングする。合計 ~4.2MB（12 バリアント × Regular/Bold/Italic/BoldItalic）。
 
 ### 3. 変換チェーン
 
@@ -114,7 +114,7 @@ pub enum FontData {
 `PdfFont::load()` 拡張:
 
 1. `/FontDescriptor` 参照を解決
-2. `/FontFile2` (TrueType), `/FontFile` (Type1), `/FontFile3` (OpenType) をデコード
+2. `/FontFile2` (TrueType), `/FontFile3` (CFF/OpenType), `/FontFile` (Type1 PFB) の順でデコード
 3. `font_data: Option<FontData>` に格納（非埋め込みは `None`）
 
 **テスト**:
