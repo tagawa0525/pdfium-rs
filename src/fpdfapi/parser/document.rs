@@ -1,11 +1,11 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 use std::fs::File;
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 use std::io::BufReader;
 use std::io::{Read, Seek};
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 use std::path::Path;
 
 use crate::error::{Error, Result};
@@ -116,7 +116,7 @@ pub struct Document<R: Read + Seek> {
     security: Option<SecurityHandler>,
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 impl Document<BufReader<File>> {
     /// Open a PDF file from a path.
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
