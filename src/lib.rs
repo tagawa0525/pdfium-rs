@@ -9,3 +9,4 @@ pub mod fxge;
 pub use fpdfapi::page::pdf_page::Page;
 pub use fpdfapi::parser::document::Document;
 pub use fpdftext::{CharInfo, FindOptions, TextFind, TextMatch};
+pub use fxge::dib::Bitmap;

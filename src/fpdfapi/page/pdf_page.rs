@@ -28,6 +28,11 @@ impl Page {
         TextPage::build(self).text().to_string()
     }
 
+    /// Render this page to an RGBA bitmap at the given DPI.
+    pub fn render(&self, dpi: f32) -> Result<Bitmap> {
+        crate::fpdfapi::render::render(self, dpi)
+    }
+
     /// Find all occurrences of `query` in this page (case-insensitive by default).
     ///
     /// Returns character-index ranges into the page's `TextPage`.
