@@ -5,7 +5,7 @@ use crate::fxcrt::coordinates::{Matrix, Point, Rect};
 pub enum PathPointKind {
     Move,
     Line,
-    /// First control point of a cubic Bézier segment.
+    /// Control point of a cubic Bézier segment.
     BezierControl,
 }
 
@@ -28,40 +28,70 @@ pub struct Path {
 
 impl Path {
     pub fn new() -> Self {
-        todo!()
+        Path { points: Vec::new() }
     }
 
     pub fn move_to(&mut self, p: Point) {
-        todo!()
+        self.points.push(PathPoint {
+            point: p,
+            kind: PathPointKind::Move,
+            close: false,
+        });
     }
 
     pub fn line_to(&mut self, p: Point) {
-        todo!()
+        self.points.push(PathPoint {
+            point: p,
+            kind: PathPointKind::Line,
+            close: false,
+        });
     }
 
-    /// Append a cubic Bézier curve with two control points and an end point.
+    /// Append a cubic Bézier curve.
+    ///
+    /// Adds three `BezierControl` points: ctrl1, ctrl2, end.
     pub fn cubic_to(&mut self, ctrl1: Point, ctrl2: Point, end: Point) {
-        todo!()
+        for p in [ctrl1, ctrl2, end] {
+            self.points.push(PathPoint {
+                point: p,
+                kind: PathPointKind::BezierControl,
+                close: false,
+            });
+        }
     }
 
-    /// Close the current sub-path.
+    /// Close the current sub-path by marking the last point with `close = true`.
     pub fn close(&mut self) {
-        todo!()
+        if let Some(last) = self.points.last_mut() {
+            last.close = true;
+        }
     }
 
-    /// Append a rectangle as a closed sub-path.
+    /// Append a rectangle as a closed sub-path (move + 3 lines + close).
     pub fn append_rect(&mut self, x: f32, y: f32, w: f32, h: f32) {
-        todo!()
+        self.move_to(Point::new(x, y));
+        self.line_to(Point::new(x + w, y));
+        self.line_to(Point::new(x + w, y + h));
+        self.line_to(Point::new(x, y + h));
+        self.close();
     }
 
     /// Transform all points by the given matrix.
     pub fn transform(&mut self, m: &Matrix) {
-        todo!()
+        for pp in &mut self.points {
+            pp.point = m.transform_point(pp.point);
+        }
     }
 
     /// Compute the axis-aligned bounding box of all points.
+    ///
+    /// Returns `Rect::default()` for an empty path.
     pub fn bounding_box(&self) -> Rect {
-        todo!()
+        if self.points.is_empty() {
+            return Rect::default();
+        }
+        let pts: Vec<Point> = self.points.iter().map(|pp| pp.point).collect();
+        Rect::from_points(&pts)
     }
 }
 
@@ -70,14 +100,12 @@ mod tests {
     use super::*;
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn path_new_is_empty() {
         let p = Path::new();
         assert!(p.points.is_empty());
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn path_move_to_line_to() {
         let mut p = Path::new();
         p.move_to(Point::new(0.0, 0.0));
@@ -88,7 +116,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn path_append_rect_bounding_box() {
         let mut p = Path::new();
         p.append_rect(10.0, 20.0, 100.0, 50.0);
@@ -100,7 +127,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn path_bounding_box_empty() {
         let p = Path::new();
         let bb = p.bounding_box();
@@ -108,7 +134,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn path_transform_translates_points() {
         let mut p = Path::new();
         p.move_to(Point::new(0.0, 0.0));
@@ -125,7 +150,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn path_cubic_to_adds_three_points() {
         let mut p = Path::new();
         p.move_to(Point::new(0.0, 0.0));

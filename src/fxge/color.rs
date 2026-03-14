@@ -30,22 +30,32 @@ impl Color {
     };
 
     pub fn gray(v: u8) -> Self {
-        todo!()
+        Color {
+            r: v,
+            g: v,
+            b: v,
+            a: 255,
+        }
     }
 
     pub fn rgb(r: u8, g: u8, b: u8) -> Self {
-        todo!()
+        Color { r, g, b, a: 255 }
     }
 
     pub fn rgba(r: u8, g: u8, b: u8, a: u8) -> Self {
-        todo!()
+        Color { r, g, b, a }
     }
 
     /// Approximate CMYK → RGB conversion.
     ///
     /// Components are in [0.0, 1.0] range.
+    /// Formula: R = 255 × (1−C) × (1−K), etc.
     pub fn from_cmyk(c: f32, m: f32, y: f32, k: f32) -> Self {
-        todo!()
+        let factor = 1.0 - k;
+        let r = (255.0 * (1.0 - c) * factor).round().clamp(0.0, 255.0) as u8;
+        let g = (255.0 * (1.0 - m) * factor).round().clamp(0.0, 255.0) as u8;
+        let b = (255.0 * (1.0 - y) * factor).round().clamp(0.0, 255.0) as u8;
+        Color { r, g, b, a: 255 }
     }
 }
 
@@ -72,7 +82,6 @@ mod tests {
     use super::*;
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn color_gray() {
         let c = Color::gray(0);
         assert_eq!(
@@ -107,7 +116,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn color_rgb() {
         let c = Color::rgb(255, 0, 0);
         assert_eq!(c.r, 255);
@@ -117,7 +125,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn color_rgba() {
         let c = Color::rgba(10, 20, 30, 128);
         assert_eq!(c.r, 10);
@@ -127,7 +134,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn color_from_cmyk_cyan() {
         // CMYK (1,0,0,0) → cyan
         let c = Color::from_cmyk(1.0, 0.0, 0.0, 0.0);
@@ -138,7 +144,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn color_from_cmyk_black() {
         // CMYK (0,0,0,1) → black
         let c = Color::from_cmyk(0.0, 0.0, 0.0, 1.0);
@@ -149,7 +154,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn color_from_cmyk_white() {
         // CMYK (0,0,0,0) → white
         let c = Color::from_cmyk(0.0, 0.0, 0.0, 0.0);
