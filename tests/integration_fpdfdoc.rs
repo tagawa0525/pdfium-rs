@@ -111,7 +111,6 @@ fn pdf_with_form() -> Vec<u8> {
 // ── Bookmark tests ────────────────────────────────────────────────────────────
 
 #[test]
-#[ignore = "not yet implemented"]
 fn bookmarks_multi_level_tree() {
     let mut doc = Document::from_reader(Cursor::new(pdf_with_bookmark_tree())).unwrap();
     let bookmarks = doc.bookmarks().unwrap();
@@ -124,7 +123,6 @@ fn bookmarks_multi_level_tree() {
 }
 
 #[test]
-#[ignore = "not yet implemented"]
 fn bookmarks_uri_action() {
     let mut doc = Document::from_reader(Cursor::new(pdf_with_bookmark_tree())).unwrap();
     let bookmarks = doc.bookmarks().unwrap();
@@ -136,7 +134,6 @@ fn bookmarks_uri_action() {
 // ── Annotation tests ──────────────────────────────────────────────────────────
 
 #[test]
-#[ignore = "not yet implemented"]
 fn annotations_two_subtypes_on_page() {
     let mut doc = Document::from_reader(Cursor::new(pdf_with_annotations())).unwrap();
     let annots = doc.page_annotations(0).unwrap();
@@ -146,7 +143,6 @@ fn annotations_two_subtypes_on_page() {
 }
 
 #[test]
-#[ignore = "not yet implemented"]
 fn annotations_contents_extracted() {
     let mut doc = Document::from_reader(Cursor::new(pdf_with_annotations())).unwrap();
     let annots = doc.page_annotations(0).unwrap();
@@ -156,7 +152,6 @@ fn annotations_contents_extracted() {
 // ── Link tests ────────────────────────────────────────────────────────────────
 
 #[test]
-#[ignore = "not yet implemented"]
 fn links_uri_on_page() {
     let mut doc = Document::from_reader(Cursor::new(pdf_with_annotations())).unwrap();
     let links = doc.page_links(0).unwrap();
@@ -169,7 +164,6 @@ fn links_uri_on_page() {
 // ── Form tests ────────────────────────────────────────────────────────────────
 
 #[test]
-#[ignore = "not yet implemented"]
 fn form_mixed_field_types() {
     let mut doc = Document::from_reader(Cursor::new(pdf_with_form())).unwrap();
     let form = doc.form().unwrap().unwrap();
@@ -188,7 +182,6 @@ fn form_mixed_field_types() {
 }
 
 #[test]
-#[ignore = "not yet implemented"]
 fn form_no_acroform_returns_none() {
     let pdf = pdf_with_bookmark_tree(); // no /AcroForm
     let mut doc = Document::from_reader(Cursor::new(pdf)).unwrap();
