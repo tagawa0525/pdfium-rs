@@ -5,7 +5,7 @@
 Phase 1-2ではゼロ依存方針に従い`std::error::Error`の手動実装を使用してきた。
 Phase 3（テキスト抽出）着手に先立ち、移植計画（`docs/plans/000_pdfium-rs-migration-plan.md`）で定められた通り`thiserror`を導入する。
 
-現状の`src/error.rs`には手動の`impl Display`/`impl std::error::Error`/`impl From<io::Error>`が約20行あり、`#[derive(thiserror::Error)]`で同等の機能を実現できる。
+現状の`src/error.rs`には手動の`impl Display`/`impl std::error::Error`/`impl From<io::Error>`があり、`#[derive(thiserror::Error)]`で同等の機能を実現できる。
 
 **目的**: thiserrorの導入と既存Error enumのderiveマクロ化。Phase 3以降でドメイン別エラー型を追加する基盤を整える。
 
@@ -14,12 +14,12 @@ Phase 3（テキスト抽出）着手に先立ち、移植計画（`docs/plans/0
 ### 1. `Cargo.toml` — thiserror依存追加
 
 ```toml
-thiserror = "2"
+thiserror = "2.0.18"
 ```
 
 ### 2. `src/error.rs` — deriveマクロに移行
 
-**Before** (手動実装 ~40行):
+**Before** (手動実装):
 
 ```rust
 use std::fmt;
@@ -37,7 +37,7 @@ impl std::error::Error for Error { ... } // 7行
 impl From<io::Error> for Error { ... }   // 5行
 ```
 
-**After** (thiserror derive ~12行):
+**After** (thiserror derive):
 
 ```rust
 use std::io;
