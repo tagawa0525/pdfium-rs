@@ -1,6 +1,6 @@
 # Phase 2: 暗号化PDF + ストリームデコード
 
-Status: **IN PROGRESS** (Step 5/6 完了)
+Status: **DONE** (全6ステップ完了)
 
 ## 目標
 
@@ -99,7 +99,7 @@ PDF Standard Security Handler (revision 2-6) を実装:
 | 5 (AES)     | AES-128           | PDF 1.6+    |
 | 6 (AES-256) | AES-256 + SHA-256 | PDF 2.0     |
 
-### Step 6: 統合 — Document::open_with_password
+### Step 6: 統合 — Document::open_with_password ✅ DONE (PR #14)
 
 Document に暗号化対応を組み込み、End-to-End で動作させる:
 
