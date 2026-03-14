@@ -292,7 +292,7 @@ Step 7 (統合テスト) ← Step 6 に依存
 
 | Step | 内容                           | ステータス |
 | ---- | ------------------------------ | ---------- |
-| 1    | fxge基盤 (Color, Path, Bitmap) | 未着手     |
+| 1    | fxge基盤 (Color, Path, Bitmap) | PR #33     |
 | 2    | ColorSpace                     | 未着手     |
 | 3    | GraphicsState + PageObject     | 未着手     |
 | 4    | コンテントパーサ拡張           | 未着手     |
