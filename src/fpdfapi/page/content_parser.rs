@@ -297,6 +297,23 @@ impl<'a, R: Read + Seek> Parser<'a, R> {
         self.objects
     }
 
+    /// Flush accumulated `text_chars` as a `TextObject` if inside BT and
+    /// there are chars to emit. Used by both `ET` and `Tf` handlers.
+    fn flush_text_object(&mut self) {
+        if self.in_bt && !self.text_chars.is_empty() {
+            let font = self.bt_font.take().unwrap_or(PdfFont::Unsupported {
+                base_font: String::new(),
+            });
+            self.objects.push(PageObject::Text(Box::new(TextObject {
+                char_entries: std::mem::take(&mut self.text_chars),
+                font,
+                font_size: self.bt_font_size,
+                text_matrix: self.bt_text_matrix,
+                ctm: self.bt_ctm,
+            })));
+        }
+    }
+
     fn dispatch(&mut self, op: &[u8]) {
         match op {
             // ── Graphics state ──────────────────────────────────────────────
@@ -344,18 +361,7 @@ impl<'a, R: Read + Seek> Parser<'a, R> {
                 self.bt_font_size = self.gs.text_state.font_size;
             }
             b"ET" => {
-                if self.in_bt && !self.text_chars.is_empty() {
-                    let font = self.bt_font.take().unwrap_or(PdfFont::Unsupported {
-                        base_font: String::new(),
-                    });
-                    self.objects.push(PageObject::Text(Box::new(TextObject {
-                        char_entries: std::mem::take(&mut self.text_chars),
-                        font,
-                        font_size: self.bt_font_size,
-                        text_matrix: self.bt_text_matrix,
-                        ctm: self.bt_ctm,
-                    })));
-                }
+                self.flush_text_object();
                 self.in_bt = false;
                 self.text_chars.clear();
             }
@@ -366,6 +372,9 @@ impl<'a, R: Read + Seek> Parser<'a, R> {
                 if let (Some(Token::Number(size)), Some(Token::Name(name))) =
                     (self.stack.pop(), self.stack.pop())
                 {
+                    // Flush accumulated chars before switching fonts so each
+                    // TextObject has a consistent font_size.
+                    self.flush_text_object();
                     self.gs.text_state.font_size = size;
                     if self.in_bt {
                         self.bt_font_size = size;
