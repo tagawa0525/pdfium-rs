@@ -71,9 +71,9 @@ pub enum Error {
 
 ## 対象ファイル
 
-| ファイル | 変更内容 |
-| ------- | ------- |
-| `Cargo.toml` | `thiserror = "2"` 追加 |
+| ファイル       | 変更内容                     |
+| -------------- | ---------------------------- |
+| `Cargo.toml`   | `thiserror = "2"` 追加       |
 | `src/error.rs` | deriveマクロ化、手動impl削除 |
 
 他のファイル(`fdrm/`, `fxcodec/`, `fpdfapi/parser/`)は変更不要。`use crate::error::{Error, Result}` のインポートはそのまま動作する。
