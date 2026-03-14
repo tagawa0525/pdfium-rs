@@ -32,14 +32,50 @@ impl Dest {
     /// `arr` should be the elements after the page reference (i.e., the zoom mode name
     /// followed by numeric parameters). `page_index` is the resolved 0-based page index.
     pub fn from_array(arr: &[PdfObject], page_index: Option<u32>) -> Self {
-        let _ = (arr, page_index);
-        todo!()
+        let zoom_mode = arr
+            .first()
+            .and_then(|obj| obj.as_name())
+            .map(|name| match name.as_bytes() {
+                b"XYZ" => ZoomMode::XYZ,
+                b"Fit" => ZoomMode::Fit,
+                b"FitH" => ZoomMode::FitH,
+                b"FitV" => ZoomMode::FitV,
+                b"FitR" => ZoomMode::FitR,
+                b"FitB" => ZoomMode::FitB,
+                b"FitBH" => ZoomMode::FitBH,
+                b"FitBV" => ZoomMode::FitBV,
+                _ => ZoomMode::Unknown,
+            })
+            .unwrap_or(ZoomMode::Unknown);
+
+        let params: Vec<f32> = arr
+            .iter()
+            .skip(1)
+            .map(|obj| obj.as_f64().map(|v| v as f32).unwrap_or(0.0))
+            .collect();
+
+        Dest {
+            page_index,
+            zoom_mode,
+            params,
+        }
     }
 
     /// Extract XYZ parameters: (left, top, zoom).
     /// Returns `None` if the zoom mode is not XYZ.
     pub fn xyz(&self) -> Option<(Option<f32>, Option<f32>, Option<f32>)> {
-        todo!()
+        if self.zoom_mode != ZoomMode::XYZ {
+            return None;
+        }
+        Some((
+            Self::non_zero_param(&self.params, 0),
+            Self::non_zero_param(&self.params, 1),
+            Self::non_zero_param(&self.params, 2),
+        ))
+    }
+
+    fn non_zero_param(params: &[f32], index: usize) -> Option<f32> {
+        params.get(index).copied().filter(|&v| v != 0.0)
     }
 }
 
@@ -67,7 +103,7 @@ mod tests {
     // --- ZoomMode parsing ---
 
     #[test]
-    #[ignore = "not yet implemented"]
+
     fn xyz_zoom_mode() {
         let arr = [name("XYZ"), real(100.0), real(200.0), real(1.5)];
         let dest = Dest::from_array(&arr, Some(0));
@@ -77,7 +113,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
+
     fn fit_zoom_mode() {
         let arr = [name("Fit")];
         let dest = Dest::from_array(&arr, Some(2));
@@ -86,7 +122,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
+
     fn fit_h_zoom_mode() {
         let arr = [name("FitH"), real(300.0)];
         let dest = Dest::from_array(&arr, Some(1));
@@ -95,7 +131,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
+
     fn fit_v_zoom_mode() {
         let arr = [name("FitV"), real(50.0)];
         let dest = Dest::from_array(&arr, None);
@@ -104,7 +140,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
+
     fn fit_r_zoom_mode() {
         let arr = [
             name("FitR"),
@@ -119,7 +155,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
+
     fn fit_b_zoom_mode() {
         let arr = [name("FitB")];
         let dest = Dest::from_array(&arr, Some(0));
@@ -128,7 +164,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
+
     fn fit_bh_zoom_mode() {
         let arr = [name("FitBH"), real(500.0)];
         let dest = Dest::from_array(&arr, Some(0));
@@ -137,7 +173,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
+
     fn fit_bv_zoom_mode() {
         let arr = [name("FitBV"), integer(72)];
         let dest = Dest::from_array(&arr, Some(0));
@@ -146,7 +182,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
+
     fn unknown_zoom_mode() {
         let arr = [name("Invalid")];
         let dest = Dest::from_array(&arr, Some(0));
@@ -156,7 +192,7 @@ mod tests {
     // --- Null parameters ---
 
     #[test]
-    #[ignore = "not yet implemented"]
+
     fn xyz_with_null_params() {
         let arr = [name("XYZ"), null(), null(), null()];
         let dest = Dest::from_array(&arr, Some(0));
@@ -167,7 +203,7 @@ mod tests {
     // --- Empty / malformed arrays ---
 
     #[test]
-    #[ignore = "not yet implemented"]
+
     fn empty_array() {
         let arr: [PdfObject; 0] = [];
         let dest = Dest::from_array(&arr, Some(0));
@@ -177,7 +213,7 @@ mod tests {
     // --- xyz() accessor ---
 
     #[test]
-    #[ignore = "not yet implemented"]
+
     fn xyz_accessor_returns_values() {
         let arr = [name("XYZ"), real(10.0), real(20.0), real(2.0)];
         let dest = Dest::from_array(&arr, Some(0));
@@ -188,7 +224,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
+
     fn xyz_accessor_with_null_values() {
         let arr = [name("XYZ"), null(), real(20.0), null()];
         let dest = Dest::from_array(&arr, Some(0));
@@ -199,7 +235,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
+
     fn xyz_accessor_returns_none_for_non_xyz() {
         let arr = [name("Fit")];
         let dest = Dest::from_array(&arr, Some(0));
@@ -209,7 +245,7 @@ mod tests {
     // --- Integer parameters ---
 
     #[test]
-    #[ignore = "not yet implemented"]
+
     fn integer_params_converted_to_f32() {
         let arr = [name("XYZ"), integer(100), integer(200), integer(1)];
         let dest = Dest::from_array(&arr, Some(0));
