@@ -244,6 +244,17 @@ pub fn standard_font_data(base_font: &str) -> Option<&'static [u8]> {
 
 ---
 
+## 進捗
+
+| Step | 内容                            | 状態 |
+| ---- | ------------------------------- | ---- |
+| 1    | TextObject に描画属性を追加     | done |
+| 2    | FontDescriptor からフォント抽出 | done |
+| 3    | グリフアウトライン抽出          | done |
+| 4    | テキストレンダラ                | done |
+| 5    | 標準 14 フォントフォールバック  | done |
+| 6    | 統合テスト                      | done |
+
 ## 依存順序
 
 ```text
