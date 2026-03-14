@@ -397,7 +397,7 @@ fn aes256_check_password(password: &[u8], dict: &EncryptDict) -> Option<Vec<u8>>
         let key_salt = &dict.user_hash[40..48];
 
         let hash = if dict.revision == 6 {
-            revision6_hash(password, validation_salt, &[])
+            revision6_hash(password, validation_salt, &[])?
         } else {
             sha256::digest(&[password, validation_salt].concat())
         };
@@ -405,7 +405,7 @@ fn aes256_check_password(password: &[u8], dict: &EncryptDict) -> Option<Vec<u8>>
         if hash[..] == dict.user_hash[..32] {
             // Recover key from UE
             let key_hash = if dict.revision == 6 {
-                revision6_hash(password, key_salt, &[])
+                revision6_hash(password, key_salt, &[])?
             } else {
                 sha256::digest(&[password, key_salt].concat())
             };
@@ -424,14 +424,14 @@ fn aes256_check_password(password: &[u8], dict: &EncryptDict) -> Option<Vec<u8>>
         let key_salt = &dict.owner_hash[40..48];
 
         let hash = if dict.revision == 6 {
-            revision6_hash(password, validation_salt, &dict.user_hash[..48])
+            revision6_hash(password, validation_salt, &dict.user_hash[..48])?
         } else {
             sha256::digest(&[password, validation_salt, &dict.user_hash[..48]].concat())
         };
 
         if hash[..] == dict.owner_hash[..32] {
             let key_hash = if dict.revision == 6 {
-                revision6_hash(password, key_salt, &dict.user_hash[..48])
+                revision6_hash(password, key_salt, &dict.user_hash[..48])?
             } else {
                 sha256::digest(&[password, key_salt, &dict.user_hash[..48]].concat())
             };
@@ -451,7 +451,7 @@ fn aes256_check_password(password: &[u8], dict: &EncryptDict) -> Option<Vec<u8>>
 ///
 /// Uses SHA-256/384/512 adaptively with AES-128-CBC encryption rounds.
 /// Ported from PDFium `Revision6_Hash()`.
-fn revision6_hash(password: &[u8], salt: &[u8], vector: &[u8]) -> [u8; 32] {
+fn revision6_hash(password: &[u8], salt: &[u8], vector: &[u8]) -> Option<[u8; 32]> {
     use crate::fdrm::{sha384, sha512};
 
     // Initial SHA-256 hash
@@ -482,8 +482,7 @@ fn revision6_hash(password: &[u8], salt: &[u8], vector: &[u8]) -> [u8; 32] {
         // AES-128-CBC encrypt with key = first 16 bytes, iv = next 16 bytes
         let aes_key = &hash_result[..16];
         let aes_iv = &hash_result[16..32];
-        let encrypted = aes::encrypt_aes128_cbc(aes_key, aes_iv, &content)
-            .expect("AES-128-CBC encryption in revision6_hash must not fail");
+        let encrypted = aes::encrypt_aes128_cbc(aes_key, aes_iv, &content).ok()?;
 
         // Select hash based on first 16 bytes interpreted as big-endian mod 3
         let selector = big_order_mod3(&encrypted);
@@ -514,7 +513,7 @@ fn revision6_hash(password: &[u8], salt: &[u8], vector: &[u8]) -> [u8; 32] {
 
     let mut out = [0u8; 32];
     out.copy_from_slice(&hash_result[..32]);
-    out
+    Some(out)
 }
 
 /// Compute `first 16 bytes as big-endian 128-bit integer mod 3`.
