@@ -12,7 +12,8 @@ use crate::fxcrt::coordinates::Matrix;
 pub fn page_to_device_matrix(page: &Page, dpi: f32) -> Matrix {
     let scale = dpi / 72.0;
     let page_height = page.media_box.height();
-    // PDF → device: scale X, flip Y, translate Y origin to top
+    // PDF → device: scale X, flip Y, translate Y origin to top.
+    // TODO: Handle non-zero MediaBox/CropBox origins and /Rotate (deferred to a later phase).
     Matrix::new(scale, 0.0, 0.0, -scale, 0.0, page_height * scale)
 }
 
