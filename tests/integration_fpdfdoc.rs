@@ -126,6 +126,7 @@ fn bookmarks_multi_level_tree() {
 fn bookmarks_uri_action() {
     let mut doc = Document::from_reader(Cursor::new(pdf_with_bookmark_tree())).unwrap();
     let bookmarks = doc.bookmarks().unwrap();
+    assert_eq!(bookmarks.len(), 2, "expected two top-level bookmarks");
     let action = bookmarks[1].action.as_ref().unwrap();
     assert_eq!(action.action_type(), ActionType::Uri);
     assert_eq!(action.uri(), Some("https://example.com".to_string()));
@@ -146,6 +147,7 @@ fn annotations_two_subtypes_on_page() {
 fn annotations_contents_extracted() {
     let mut doc = Document::from_reader(Cursor::new(pdf_with_annotations())).unwrap();
     let annots = doc.page_annotations(0).unwrap();
+    assert!(!annots.is_empty(), "expected at least one annotation");
     assert_eq!(annots[0].contents, Some("A note".to_string()));
 }
 
