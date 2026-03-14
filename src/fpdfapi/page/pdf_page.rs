@@ -1,6 +1,8 @@
+use crate::error::Result;
 use crate::fpdftext::text_find::{FindOptions, TextFind, TextMatch};
 use crate::fpdftext::text_page::TextPage;
 use crate::fxcrt::coordinates::Rect;
+use crate::fxge::dib::Bitmap;
 
 use super::page_object::PageObject;
 

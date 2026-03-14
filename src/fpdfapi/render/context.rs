@@ -9,9 +9,11 @@ use crate::fxcrt::coordinates::Matrix;
 ///
 /// At `dpi` pixels/inch the scale factor is `dpi / 72.0`.
 /// The resulting matrix: `[scale, 0, 0, -scale, 0, page_height_pts * scale]`.
-#[allow(dead_code)]
-pub fn page_to_device_matrix(_page: &Page, _dpi: f32) -> Matrix {
-    todo!()
+pub fn page_to_device_matrix(page: &Page, dpi: f32) -> Matrix {
+    let scale = dpi / 72.0;
+    let page_height = page.media_box.height();
+    // PDF → device: scale X, flip Y, translate Y origin to top
+    Matrix::new(scale, 0.0, 0.0, -scale, 0.0, page_height * scale)
 }
 
 #[cfg(test)]
@@ -29,7 +31,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn page_to_device_matrix_72dpi() {
         let m = page_to_device_matrix(&letter_page(), 72.0);
         // At 72 DPI, scale = 1.0 → [1, 0, 0, -1, 0, 792]
@@ -42,7 +43,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "not yet implemented"]
     fn page_to_device_matrix_144dpi() {
         let m = page_to_device_matrix(&letter_page(), 144.0);
         // At 144 DPI, scale = 2.0 → [2, 0, 0, -2, 0, 1584]
