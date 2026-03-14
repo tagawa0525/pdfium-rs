@@ -1,5 +1,6 @@
 use crate::fpdfapi::font::pdf_font::PdfFont;
 use crate::fxcrt::coordinates::{Matrix, Point};
+use crate::fxge::color::{Color, LineCap, LineJoin};
 
 /// A single character entry within a text object.
 pub struct CharEntry {
@@ -25,13 +26,48 @@ pub struct TextObject {
     pub ctm: Matrix,
 }
 
-/// A page content object. Only `Text` carries data in Phase 3; the rest are stubs.
+/// Fill rule for path painting operations (PDF spec §8.5.3.3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum FillRule {
+    /// Non-zero winding number rule.
+    #[default]
+    NonZero,
+    /// Even-odd rule.
+    EvenOdd,
+    /// No fill (stroke only).
+    None,
+}
+
+/// A path object with painting attributes.
+pub struct PathObject {
+    pub path: crate::fxge::path::Path,
+    pub fill_rule: FillRule,
+    pub stroke: bool,
+    pub fill_color: Color,
+    pub stroke_color: Color,
+    pub line_width: f32,
+    pub line_cap: LineCap,
+    pub line_join: LineJoin,
+    pub miter_limit: f32,
+    pub ctm: Matrix,
+}
+
+/// An image object with decoded pixel data.
+pub struct ImageObject {
+    /// Decoded RGBA pixels.
+    pub data: Vec<u8>,
+    pub width: u32,
+    pub height: u32,
+    pub ctm: Matrix,
+}
+
+/// A page content object.
 pub enum PageObject {
     Text(Box<TextObject>),
-    /// Path objects (lines, curves, rectangles) — not extracted in Phase 3.
-    Path,
-    /// Image XObjects — not extracted in Phase 3.
-    Image,
+    /// Path objects (lines, curves, rectangles).
+    Path(Box<PathObject>),
+    /// Image XObjects.
+    Image(Box<ImageObject>),
     /// Form XObjects — minimally handled for recursion; stub otherwise.
     Form,
 }
@@ -89,8 +125,52 @@ mod tests {
 
     #[test]
     fn page_object_stub_variants() {
-        assert!(matches!(PageObject::Path, PageObject::Path));
-        assert!(matches!(PageObject::Image, PageObject::Image));
         assert!(matches!(PageObject::Form, PageObject::Form));
+    }
+
+    #[test]
+    fn path_object_default_fields() {
+        let obj = PathObject {
+            path: crate::fxge::path::Path::new(),
+            fill_rule: FillRule::default(),
+            stroke: false,
+            fill_color: Color::BLACK,
+            stroke_color: Color::BLACK,
+            line_width: 1.0,
+            line_cap: LineCap::default(),
+            line_join: LineJoin::default(),
+            miter_limit: 10.0,
+            ctm: Matrix::default(),
+        };
+        assert_eq!(obj.fill_rule, FillRule::NonZero);
+        assert!(!obj.stroke);
+        assert_eq!(obj.fill_color, Color::BLACK);
+        assert_eq!(obj.line_width, 1.0);
+        assert_eq!(obj.miter_limit, 10.0);
+    }
+
+    #[test]
+    fn image_object_fields() {
+        let obj = ImageObject {
+            data: vec![255, 0, 0, 255],
+            width: 1,
+            height: 1,
+            ctm: Matrix::default(),
+        };
+        assert_eq!(obj.width, 1);
+        assert_eq!(obj.height, 1);
+        assert_eq!(obj.data.len(), 4);
+    }
+
+    #[test]
+    fn graphics_state_has_color_and_line_style() {
+        let gs = crate::fpdfapi::page::graphics_state::GraphicsState::default();
+        assert_eq!(gs.line_width, 1.0);
+        assert_eq!(gs.line_cap, LineCap::Butt);
+        assert_eq!(gs.line_join, LineJoin::Miter);
+        assert_eq!(gs.miter_limit, 10.0);
+        assert!(gs.dash_array.is_empty());
+        assert_eq!(gs.dash_phase, 0.0);
+        assert_eq!(gs.color_state.fill_color(), Color::BLACK);
     }
 }
