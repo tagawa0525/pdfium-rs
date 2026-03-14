@@ -511,6 +511,13 @@ impl<R: Read + Seek> Document<R> {
         Ok(data)
     }
 
+    /// Return the document outline (bookmarks) tree.
+    ///
+    /// Returns an empty `Vec` if the document has no `/Outlines` entry.
+    pub fn bookmarks(&mut self) -> Result<Vec<crate::fpdfdoc::bookmark::Bookmark>> {
+        todo!()
+    }
+
     /// Get the root (catalog) dictionary.
     pub fn catalog(&mut self) -> Result<&PdfDictionary> {
         let root_ref = self
