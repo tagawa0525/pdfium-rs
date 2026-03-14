@@ -173,6 +173,11 @@ fn read_number_or_keyword(data: &[u8], pos: &mut usize) -> Token {
     while *pos < data.len() && !is_whitespace(data[*pos]) && !is_delimiter(data[*pos]) {
         *pos += 1;
     }
+    // Guarantee forward progress: if the current byte is an unhandled delimiter
+    // (e.g. `>`, `>>`, stray `]`), consume it to prevent infinite loops.
+    if *pos == start && *pos < data.len() {
+        *pos += 1;
+    }
     let token_bytes = &data[start..*pos];
 
     // Try to parse as number
