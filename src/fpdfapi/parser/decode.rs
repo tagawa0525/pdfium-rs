@@ -118,8 +118,7 @@ fn apply_filter(data: &[u8], filter: &Filter, parms: Option<&PdfDictionary>) -> 
             lzw::decode(data, early_change)
         }
         Filter::DCTDecode => {
-            let decoded = crate::fxcodec::jpeg::decode(data)
-                .map_err(|e| Error::InvalidPdf(format!("DCTDecode: {e}")))?;
+            let decoded = crate::fxcodec::jpeg::decode(data)?;
             Ok(decoded.pixels)
         }
     }
