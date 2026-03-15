@@ -1,4 +1,5 @@
 use crate::fpdfapi::parser::object::PdfDictionary;
+use crate::fpdfdoc::util::decode_pdf_text_string;
 
 /// Type of a PDF action.
 ///
@@ -68,6 +69,9 @@ impl Action {
     }
 
     /// Returns the URI string from `/URI` (for `ActionType::Uri`).
+    ///
+    /// URIs are ASCII per PDF spec; non-ASCII bytes are passed through via
+    /// lossy UTF-8 conversion.
     pub fn uri(&self) -> Option<String> {
         self.dict
             .get_string(b"URI")
@@ -82,22 +86,31 @@ impl Action {
     }
 
     /// Returns the JavaScript source from `/JS` (string form only).
+    ///
+    /// Unlike other text fields, control characters (newlines, tabs) are
+    /// preserved since they are semantically significant in JavaScript.
+    /// Stream-based `/JS` is not supported yet.
     pub fn javascript(&self) -> Option<String> {
         self.dict
             .get_string(b"JS")
             .map(|s| String::from_utf8_lossy(s.as_bytes()).into_owned())
     }
 
-    /// Returns the file path from `/F` (for `GoToR`, `Launch` etc.).
+    /// Returns the file path from `/F` (string form only).
+    ///
+    /// Only handles string `/F` entries. Dictionary file specifications
+    /// (e.g., `<< /Type /Filespec /F (...) >>`) are not yet supported.
     pub fn file_path(&self) -> Option<String> {
         self.dict
             .get_string(b"F")
-            .map(|s| String::from_utf8_lossy(s.as_bytes()).into_owned())
+            .map(|s| decode_pdf_text_string(s.as_bytes()))
     }
 
     /// Returns chained sub-actions from `/Next`.
     ///
     /// `/Next` can be a single action dictionary or an array of dictionaries.
+    /// Only direct (inline) dictionaries are collected; indirect references
+    /// within `/Next` require `Document` access and are currently skipped.
     pub fn sub_actions(&self) -> Vec<Action> {
         use crate::fpdfapi::parser::object::PdfObject;
         match self.dict.get(b"Next") {
