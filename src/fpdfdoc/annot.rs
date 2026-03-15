@@ -582,4 +582,71 @@ mod tests {
         assert_eq!(annots.len(), 1);
         assert_eq!(annots[0].subtype, AnnotSubtype::Highlight);
     }
+
+    #[test]
+    fn page_annotations_indirect_action_resolved() {
+        use crate::fpdfapi::parser::document::Document;
+        use std::io::Cursor;
+
+        // /A is an indirect reference to obj 5 (a URI action)
+        let mut pdf = Vec::new();
+        pdf.extend_from_slice(b"%PDF-1.4\n");
+        let o1 = pdf.len();
+        pdf.extend_from_slice(b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+        let o2 = pdf.len();
+        pdf.extend_from_slice(b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
+        let o3 = pdf.len();
+        pdf.extend_from_slice(b"3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Annots [4 0 R] >>\nendobj\n");
+        let o4 = pdf.len();
+        pdf.extend_from_slice(
+            b"4 0 obj\n<< /Type /Annot /Subtype /Link /Rect [0 0 100 100] /A 5 0 R >>\nendobj\n",
+        );
+        let o5 = pdf.len();
+        pdf.extend_from_slice(b"5 0 obj\n<< /S /URI /URI (https://example.com) >>\nendobj\n");
+        let xref = pdf.len();
+        pdf.extend_from_slice(b"xref\n0 6\n0000000000 65535 f \n");
+        for o in [o1, o2, o3, o4, o5] {
+            pdf.extend_from_slice(format!("{o:010} 00000 n \n").as_bytes());
+        }
+        pdf.extend_from_slice(b"trailer\n<< /Size 6 /Root 1 0 R >>\n");
+        pdf.extend_from_slice(format!("startxref\n{xref}\n%%EOF\n").as_bytes());
+
+        let mut doc = Document::from_reader(Cursor::new(pdf)).unwrap();
+        let annots = doc.page_annotations(0).unwrap();
+        assert_eq!(annots.len(), 1);
+        let action = annots[0]
+            .action
+            .as_ref()
+            .expect("action should be resolved");
+        use crate::fpdfdoc::action::ActionType;
+        assert_eq!(action.action_type(), ActionType::Uri);
+        assert_eq!(action.uri(), Some("https://example.com".to_string()));
+    }
+
+    #[test]
+    fn page_annotations_invalid_annots_type() {
+        use crate::fpdfapi::parser::document::Document;
+        use std::io::Cursor;
+
+        // /Annots is an integer (invalid)
+        let mut pdf = Vec::new();
+        pdf.extend_from_slice(b"%PDF-1.4\n");
+        let o1 = pdf.len();
+        pdf.extend_from_slice(b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+        let o2 = pdf.len();
+        pdf.extend_from_slice(b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
+        let o3 = pdf.len();
+        pdf.extend_from_slice(b"3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Annots 42 >>\nendobj\n");
+        let xref = pdf.len();
+        pdf.extend_from_slice(b"xref\n0 4\n0000000000 65535 f \n");
+        for o in [o1, o2, o3] {
+            pdf.extend_from_slice(format!("{o:010} 00000 n \n").as_bytes());
+        }
+        pdf.extend_from_slice(b"trailer\n<< /Size 4 /Root 1 0 R >>\n");
+        pdf.extend_from_slice(format!("startxref\n{xref}\n%%EOF\n").as_bytes());
+
+        let mut doc = Document::from_reader(Cursor::new(pdf)).unwrap();
+        let result = doc.page_annotations(0);
+        assert!(result.is_err(), "/Annots integer should cause InvalidPdf");
+    }
 }

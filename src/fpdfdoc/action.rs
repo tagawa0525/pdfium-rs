@@ -87,11 +87,13 @@ impl Action {
 
     /// Returns the JavaScript source from `/JS` (string form only).
     ///
+    /// Unlike other text fields, control characters (newlines, tabs) are
+    /// preserved since they are semantically significant in JavaScript.
     /// Stream-based `/JS` is not supported yet.
     pub fn javascript(&self) -> Option<String> {
         self.dict
             .get_string(b"JS")
-            .map(|s| decode_pdf_text_string(s.as_bytes()))
+            .map(|s| String::from_utf8_lossy(s.as_bytes()).into_owned())
     }
 
     /// Returns the file path from `/F` (string form only).
