@@ -1,9 +1,10 @@
 use std::io::{Read, Seek};
 
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::fpdfapi::parser::document::Document;
 use crate::fpdfapi::parser::object::{PdfDictionary, PdfObject};
 use crate::fpdfdoc::action::Action;
+use crate::fpdfdoc::util::decode_pdf_text_string;
 use crate::fxcrt::coordinates::Rect;
 
 /// Annotation subtype, derived from the `/Subtype` entry.
@@ -151,20 +152,21 @@ impl Annotation {
             })
             .unwrap_or_else(|| Rect::new(0.0, 0.0, 0.0, 0.0));
 
-        let flags = AnnotFlags(dict.get_i32(b"F").unwrap_or(0) as u32);
+        let flags = AnnotFlags(dict.get_i32(b"F").unwrap_or(0).max(0) as u32);
 
         let contents = dict
             .get_string(b"Contents")
-            .map(|s| String::from_utf8_lossy(s.as_bytes()).into_owned());
+            .map(|s| decode_pdf_text_string(s.as_bytes()));
 
         let name = dict
             .get_string(b"NM")
-            .map(|s| String::from_utf8_lossy(s.as_bytes()).into_owned());
+            .map(|s| decode_pdf_text_string(s.as_bytes()));
 
         let modified = dict
             .get_string(b"M")
-            .map(|s| String::from_utf8_lossy(s.as_bytes()).into_owned());
+            .map(|s| decode_pdf_text_string(s.as_bytes()));
 
+        // /A action — direct dict only; indirect refs are resolved by the caller
         let action = dict.get_dict(b"A").map(|d| Action::from_dict(d.clone()));
 
         Annotation {
@@ -206,16 +208,25 @@ impl<R: Read + Seek> AnnotationsExt for Document<R> {
                 .collect(),
             PdfObject::Reference(id) => {
                 // /Annots itself is an indirect reference to the array
-                self.object(id.num)?
+                let arr = self
+                    .object(id.num)?
                     .as_array()
-                    .map(|a| {
-                        a.iter()
-                            .filter_map(|o| o.as_reference().map(|r| r.num))
-                            .collect()
-                    })
-                    .unwrap_or_default()
+                    .ok_or_else(|| {
+                        Error::InvalidPdf(format!(
+                            "/Annots reference {} does not resolve to an array",
+                            id.num
+                        ))
+                    })?
+                    .to_vec();
+                arr.iter()
+                    .filter_map(|o| o.as_reference().map(|r| r.num))
+                    .collect()
             }
-            _ => return Ok(vec![]),
+            _ => {
+                return Err(Error::InvalidPdf(
+                    "/Annots is not an array or reference".into(),
+                ));
+            }
         };
 
         let mut result = Vec::with_capacity(annot_refs.len());
@@ -224,12 +235,22 @@ impl<R: Read + Seek> AnnotationsExt for Document<R> {
                 .object(ref_num)?
                 .as_dict()
                 .ok_or_else(|| {
-                    crate::error::Error::InvalidPdf(format!(
-                        "annotation object {ref_num} is not a dictionary"
-                    ))
+                    Error::InvalidPdf(format!("annotation object {ref_num} is not a dictionary"))
                 })?
                 .clone();
-            result.push(Annotation::from_dict(dict));
+
+            // Resolve /A if it is an indirect reference
+            let mut annot = Annotation::from_dict(dict.clone());
+            if annot.action.is_none()
+                && let Some(PdfObject::Reference(a_id)) = dict.get(b"A")
+            {
+                annot.action = self
+                    .object(a_id.num)?
+                    .as_dict()
+                    .map(|d| Action::from_dict(d.clone()));
+            }
+
+            result.push(annot);
         }
         Ok(result)
     }
@@ -519,5 +540,46 @@ mod tests {
         pdf.extend_from_slice(b"trailer\n<< /Size 5 /Root 1 0 R >>\n");
         pdf.extend_from_slice(format!("startxref\n{xref_off}\n%%EOF\n").as_bytes());
         pdf
+    }
+
+    /// PDF where /Annots is an indirect reference to the array (obj 5).
+    fn page_with_indirect_annots() -> Vec<u8> {
+        let mut pdf = Vec::new();
+        pdf.extend_from_slice(b"%PDF-1.4\n");
+        let o1 = pdf.len();
+        pdf.extend_from_slice(b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+        let o2 = pdf.len();
+        pdf.extend_from_slice(b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
+        let o3 = pdf.len();
+        // /Annots is an indirect reference to obj 5
+        pdf.extend_from_slice(
+            b"3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Annots 5 0 R >>\nendobj\n",
+        );
+        let o4 = pdf.len();
+        pdf.extend_from_slice(
+            b"4 0 obj\n<< /Type /Annot /Subtype /Highlight /Rect [0 0 50 50] >>\nendobj\n",
+        );
+        let o5 = pdf.len();
+        pdf.extend_from_slice(b"5 0 obj\n[4 0 R]\nendobj\n");
+        let xref = pdf.len();
+        pdf.extend_from_slice(b"xref\n0 6\n0000000000 65535 f \n");
+        for o in [o1, o2, o3, o4, o5] {
+            pdf.extend_from_slice(format!("{o:010} 00000 n \n").as_bytes());
+        }
+        pdf.extend_from_slice(b"trailer\n<< /Size 6 /Root 1 0 R >>\n");
+        pdf.extend_from_slice(format!("startxref\n{xref}\n%%EOF\n").as_bytes());
+        pdf
+    }
+
+    #[test]
+    fn page_annotations_indirect_annots_ref() {
+        use crate::fpdfapi::parser::document::Document;
+        use std::io::Cursor;
+
+        let pdf = page_with_indirect_annots();
+        let mut doc = Document::from_reader(Cursor::new(pdf)).unwrap();
+        let annots = doc.page_annotations(0).unwrap();
+        assert_eq!(annots.len(), 1);
+        assert_eq!(annots[0].subtype, AnnotSubtype::Highlight);
     }
 }
